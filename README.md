@@ -294,8 +294,7 @@ Then use `docker-compose.yml`:
 ```yaml
 services:
   pbs-exporter:
-    build: .
-    image: pbs-exporter:latest
+    image: ghcr.io/mlgruby/pbs-exporter-rs:main
     container_name: pbs-exporter
     ports:
       - "9101:9101"
