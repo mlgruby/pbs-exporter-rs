@@ -1,0 +1,56 @@
+[package]
+name = "pbs-exporter"
+version = "0.1.0"
+edition = "2021"
+authors = ["Satyasheel"]
+description = "Prometheus metrics exporter for Proxmox Backup Server 4.x"
+license = "Apache-2.0"
+repository = "https://github.com/mlgruby/pbs-exporter-rs"
+keywords = ["prometheus", "proxmox", "backup", "metrics", "exporter"]
+categories = ["command-line-utilities", "web-programming"]
+
+[lib]
+name = "pbs_exporter"
+path = "src/lib.rs"
+
+[[bin]]
+name = "pbs-exporter"
+path = "src/main.rs"
+
+[dependencies]
+# HTTP Client
+reqwest = { version = "0.12.28", features = ["json", "rustls-tls"], default-features = false }
+
+# Prometheus
+prometheus = { version = "0.14", features = ["process"] }
+
+# HTTP Server
+axum = "0.8"
+tower-http = { version = "0.6", features = ["trace"] }
+
+# Async Runtime
+tokio = { version = "1.48", features = ["full"] }
+
+# Error Handling
+thiserror = "2.0"
+anyhow = "1.0"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# Configuration
+config = "0.14"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# CLI
+clap = { version = "4.5", features = ["derive", "env"] }
+
+[dev-dependencies]
+# Testing
+mockito = "1.6"
+
+[profile.release]
+opt-level = 3
+strip = true

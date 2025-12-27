@@ -1,0 +1,34 @@
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Build artifacts (exclude from Docker build context)
+target/
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Documentation (not needed in container)
+docs/
+*.md
+README.md
+LICENSE*
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+
+# Test files
+tests/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
