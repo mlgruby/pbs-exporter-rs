@@ -2,10 +2,7 @@
 
 use mockito::Server;
 use pbs_exporter::{
-    client::PbsClient,
-    config::PbsConfig,
-    metrics::MetricsCollector,
-    server::start_server,
+    client::PbsClient, config::PbsConfig, metrics::MetricsCollector, server::start_server,
 };
 use std::time::Duration;
 
@@ -24,7 +21,7 @@ fn create_test_config(server_url: &str) -> PbsConfig {
 #[tokio::test]
 async fn test_health_endpoint() {
     let mut server = Server::new_async().await;
-    
+
     // Mock minimal PBS responses
     let _mock_status = server
         .mock("GET", "/api2/json/nodes/localhost/status")
@@ -38,16 +35,14 @@ async fn test_health_endpoint() {
     let collector = MetricsCollector::new(std::sync::Arc::new(client), 0).unwrap();
 
     // Start server in background
-    let server_handle = tokio::spawn(async move {
-        start_server("127.0.0.1:0", collector).await
-    });
+    let server_handle = tokio::spawn(async move { start_server("127.0.0.1:0", collector).await });
 
     // Give server time to start
     tokio::time::sleep(Duration::from_millis(100)).await;
 
     // Test would require actual HTTP client - this is a placeholder
     // In a real scenario, you'd use reqwest to test the endpoints
-    
+
     // Cleanup
     server_handle.abort();
 }
@@ -55,7 +50,7 @@ async fn test_health_endpoint() {
 #[tokio::test]
 async fn test_metrics_endpoint_returns_prometheus_format() {
     let mut server = Server::new_async().await;
-    
+
     // Mock all required PBS endpoints
     let _mock_status = server
         .mock("GET", "/api2/json/nodes/localhost/status")
@@ -99,7 +94,7 @@ async fn test_metrics_endpoint_returns_prometheus_format() {
     assert!(metrics.contains("pbs_up 1"));
     assert!(metrics.contains("pbs_host_cpu_usage"));
     assert!(metrics.contains("pbs_datastore_total_bytes"));
-    
+
     // Verify metric format (name{labels} value)
     assert!(metrics.contains(r#"pbs_datastore_total_bytes{datastore="backup"}"#));
     // Note: Prometheus format has spaces after commas in labels
@@ -110,7 +105,7 @@ async fn test_metrics_endpoint_returns_prometheus_format() {
 #[tokio::test]
 async fn test_edge_case_empty_datastores() {
     let mut server = Server::new_async().await;
-    
+
     let _mock_status = server
         .mock("GET", "/api2/json/nodes/localhost/status")
         .with_status(200)
@@ -149,7 +144,7 @@ async fn test_edge_case_empty_datastores() {
 #[tokio::test]
 async fn test_edge_case_empty_backup_groups() {
     let mut server = Server::new_async().await;
-    
+
     let _mock_status = server
         .mock("GET", "/api2/json/nodes/localhost/status")
         .with_status(200)
@@ -194,7 +189,7 @@ async fn test_edge_case_empty_backup_groups() {
 #[tokio::test]
 async fn test_edge_case_special_characters_in_datastore_name() {
     let mut server = Server::new_async().await;
-    
+
     let _mock_status = server
         .mock("GET", "/api2/json/nodes/localhost/status")
         .with_status(200)
@@ -238,7 +233,7 @@ async fn test_edge_case_special_characters_in_datastore_name() {
 #[tokio::test]
 async fn test_partial_failure_continues_collection() {
     let mut server = Server::new_async().await;
-    
+
     let _mock_status = server
         .mock("GET", "/api2/json/nodes/localhost/status")
         .with_status(200)
@@ -295,7 +290,7 @@ async fn test_partial_failure_continues_collection() {
 #[tokio::test]
 async fn test_large_number_of_vms() {
     let mut server = Server::new_async().await;
-    
+
     let _mock_status = server
         .mock("GET", "/api2/json/nodes/localhost/status")
         .with_status(200)
@@ -343,7 +338,7 @@ async fn test_large_number_of_vms() {
 
     let metrics = collector.encode().unwrap();
     assert!(metrics.contains("pbs_up 1"));
-    
+
     // Should have metrics for all 100 VMs
     assert!(metrics.contains(r#"backup_id="100""#));
     assert!(metrics.contains(r#"backup_id="199""#));

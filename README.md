@@ -389,13 +389,19 @@ export PBS_EXPORTER__PBS__SNAPSHOT_HISTORY_LIMIT=1
 
 ## Contributing
 
-Contributions are welcome! Please:
+We welcome contributions! Please see our [Contributing Guidelines](CONTRIBUTING.md) for details on:
+
+- Fork-based workflow
+- Branch naming conventions
+- Pull request process
+- Code style and testing requirements
+
+**Quick Start for Contributors:**
 
 1. Fork the repository
-2. Create a feature branch
+2. Create a feature branch from `develop`
 3. Make your changes
-4. Run tests and linting
-5. Submit a pull request
+4. Submit a PR to `develop` (not `main`)
 
 ## License
 
