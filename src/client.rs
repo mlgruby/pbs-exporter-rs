@@ -75,9 +75,13 @@ impl PbsClient {
 
         let body = response.text().await?;
         debug!("Raw API response: {}", body);
-        
-        let api_response: ApiResponse<NodeStatus> = serde_json::from_str(&body)
-            .map_err(|e| PbsError::ParseError(format!("Failed to parse node status: {}. Body: {}", e, body)))?;
+
+        let api_response: ApiResponse<NodeStatus> = serde_json::from_str(&body).map_err(|e| {
+            PbsError::ParseError(format!(
+                "Failed to parse node status: {}. Body: {}",
+                e, body
+            ))
+        })?;
         Ok(api_response.data)
     }
 
@@ -128,9 +132,14 @@ impl PbsClient {
 
         let body = response.text().await?;
         debug!("Raw backup groups response for {}: {}", datastore, body);
-        
-        let api_response: ApiResponse<Vec<BackupGroup>> = serde_json::from_str(&body)
-            .map_err(|e| PbsError::ParseError(format!("Failed to parse backup groups: {}. Body: {}", e, body)))?;
+
+        let api_response: ApiResponse<Vec<BackupGroup>> =
+            serde_json::from_str(&body).map_err(|e| {
+                PbsError::ParseError(format!(
+                    "Failed to parse backup groups: {}. Body: {}",
+                    e, body
+                ))
+            })?;
         Ok(api_response.data)
     }
 
@@ -286,15 +295,29 @@ impl PbsClient {
             .await?;
 
         if !response.status().is_success() {
-            warn!("Failed to get snapshots for {}: {}", datastore, response.status());
+            warn!(
+                "Failed to get snapshots for {}: {}",
+                datastore,
+                response.status()
+            );
             return Err(PbsError::Api(response.error_for_status().unwrap_err()));
         }
 
         let body = response.text().await?;
-        debug!("Raw snapshots response for {}: {} bytes", datastore, body.len());
-        
-        let api_response: ApiResponse<Vec<Snapshot>> = serde_json::from_str(&body)
-            .map_err(|e| PbsError::ParseError(format!("Failed to parse snapshots: {}. Body preview: {}...", e, &body[..body.len().min(200)])))?;
+        debug!(
+            "Raw snapshots response for {}: {} bytes",
+            datastore,
+            body.len()
+        );
+
+        let api_response: ApiResponse<Vec<Snapshot>> =
+            serde_json::from_str(&body).map_err(|e| {
+                PbsError::ParseError(format!(
+                    "Failed to parse snapshots: {}. Body preview: {}...",
+                    e,
+                    &body[..body.len().min(200)]
+                ))
+            })?;
         Ok(api_response.data)
     }
 }
@@ -412,7 +435,11 @@ impl PbsClient {
             .await?;
 
         if !response.status().is_success() {
-            warn!("Failed to get GC status for {}: {}", datastore, response.status());
+            warn!(
+                "Failed to get GC status for {}: {}",
+                datastore,
+                response.status()
+            );
             return Err(PbsError::Api(response.error_for_status().unwrap_err()));
         }
 

@@ -276,7 +276,13 @@ impl MetricsCollector {
                 "pbs_snapshot_info",
                 "Individual snapshot information with timestamp as value",
             ),
-            &["datastore", "backup_type", "backup_id", "comment", "timestamp"],
+            &[
+                "datastore",
+                "backup_type",
+                "backup_id",
+                "comment",
+                "timestamp",
+            ],
         )
         .map_err(|e| PbsError::Metrics(e.to_string()))?;
         registry
@@ -288,7 +294,13 @@ impl MetricsCollector {
                 "pbs_snapshot_size_bytes",
                 "Size of individual snapshot in bytes",
             ),
-            &["datastore", "backup_type", "backup_id", "comment", "timestamp"],
+            &[
+                "datastore",
+                "backup_type",
+                "backup_id",
+                "comment",
+                "timestamp",
+            ],
         )
         .map_err(|e| PbsError::Metrics(e.to_string()))?;
         registry
@@ -300,7 +312,13 @@ impl MetricsCollector {
                 "pbs_snapshot_verified",
                 "Snapshot verification status (1=ok, 0=failed/unknown)",
             ),
-            &["datastore", "backup_type", "backup_id", "comment", "timestamp"],
+            &[
+                "datastore",
+                "backup_type",
+                "backup_id",
+                "comment",
+                "timestamp",
+            ],
         )
         .map_err(|e| PbsError::Metrics(e.to_string()))?;
         registry
@@ -312,7 +330,13 @@ impl MetricsCollector {
                 "pbs_snapshot_protected",
                 "Snapshot protection status (1=protected, 0=not protected)",
             ),
-            &["datastore", "backup_type", "backup_id", "comment", "timestamp"],
+            &[
+                "datastore",
+                "backup_type",
+                "backup_id",
+                "comment",
+                "timestamp",
+            ],
         )
         .map_err(|e| PbsError::Metrics(e.to_string()))?;
         registry
@@ -320,7 +344,10 @@ impl MetricsCollector {
             .map_err(|e| PbsError::Metrics(e.to_string()))?;
         // Task metrics
         let task_total = GaugeVec::new(
-            Opts::new("pbs_task_total", "Total number of tasks (by worker type/status)"),
+            Opts::new(
+                "pbs_task_total",
+                "Total number of tasks (by worker type/status)",
+            ),
             &["worker_type", "status", "comment"],
         )
         .map_err(|e| PbsError::Metrics(e.to_string()))?;
@@ -338,7 +365,10 @@ impl MetricsCollector {
             .map_err(|e| PbsError::Metrics(e.to_string()))?;
 
         let task_last_run_timestamp = GaugeVec::new(
-            Opts::new("pbs_task_last_run_timestamp", "Last run timestamp for task type"),
+            Opts::new(
+                "pbs_task_last_run_timestamp",
+                "Last run timestamp for task type",
+            ),
             &["worker_type"],
         )
         .map_err(|e| PbsError::Metrics(e.to_string()))?;
@@ -357,7 +387,10 @@ impl MetricsCollector {
 
         // GC metrics
         let gc_last_run_timestamp = GaugeVec::new(
-            Opts::new("pbs_gc_last_run_timestamp", "Last GC run completion timestamp"),
+            Opts::new(
+                "pbs_gc_last_run_timestamp",
+                "Last GC run completion timestamp",
+            ),
             &["datastore"],
         )
         .map_err(|e| PbsError::Metrics(e.to_string()))?;
@@ -495,7 +528,7 @@ impl MetricsCollector {
     async fn collect_internal(&self) -> Result<()> {
         // Reset all metrics to prevent stale data
         // This is crucial because we populate metrics dynamically based on current API state.
-        // If an object (snapshot, task, drive) disappears or is filtered out, 
+        // If an object (snapshot, task, drive) disappears or is filtered out,
         // we must ensure its corresponding metric is removed.
         self.pbs_up.set(0.0); // Will be set to 1.0 on success
         self.host_cpu_usage.set(0.0);
@@ -513,31 +546,31 @@ impl MetricsCollector {
         self.host_rootfs_total_bytes.set(0.0);
         self.host_rootfs_avail_bytes.set(0.0);
         self.host_uptime_seconds.set(0.0);
-        
+
         self.datastore_total_bytes.reset();
         self.datastore_used_bytes.reset();
         self.datastore_available_bytes.reset();
-        
+
         self.snapshot_count.reset();
         self.snapshot_info.reset();
         self.snapshot_size_bytes.reset();
         self.snapshot_verified.reset();
         self.snapshot_protected.reset();
         self.snapshot_last_timestamp_seconds.reset();
-        
+
         self.task_total.reset();
         self.task_duration_seconds.reset();
         self.task_last_run_timestamp.reset();
         self.task_running.reset();
-        
+
         self.gc_last_run_timestamp.reset();
         self.gc_duration_seconds.reset();
         self.gc_removed_bytes.reset();
         self.gc_pending_bytes.reset();
         self.gc_status.reset();
-        
+
         self.tape_drive_info.reset();
-        self.tape_drive_available.set(0.0); 
+        self.tape_drive_available.set(0.0);
 
         self.pbs_version.reset();
 
@@ -550,7 +583,8 @@ impl MetricsCollector {
         self.update_datastore_metrics(&datastores);
 
         // Map to store comments for tasks (worker_id -> comment)
-        let mut task_comment_map: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+        let mut task_comment_map: std::collections::HashMap<String, String> =
+            std::collections::HashMap::new();
 
         // Collect backup groups and snapshots for each datastore
         for ds in &datastores {
@@ -568,7 +602,8 @@ impl MetricsCollector {
             for snapshot in &snapshots {
                 let key = (snapshot.backup_type.clone(), snapshot.backup_id.clone());
                 // Keep the comment from the latest snapshot (highest backup_time)
-                comment_map.entry(key.clone())
+                comment_map
+                    .entry(key.clone())
                     .and_modify(|(time, _comment): &mut (i64, Option<String>)| {
                         if snapshot.backup_time > *time {
                             *time = snapshot.backup_time;
@@ -577,7 +612,7 @@ impl MetricsCollector {
                     })
                     .or_insert((snapshot.backup_time, snapshot.comment.clone()));
             }
-            
+
             // Populate task_comment_map from the comment_map
             for ((backup_type, backup_id), (_, comment)) in &comment_map {
                 if let Some(c) = comment {
@@ -652,35 +687,36 @@ impl MetricsCollector {
         // This is acceptable if we rebuild all metrics every scrape.
         // If we process multiple datastores sequentially, we should NOT reset here if we share the GaugeVec.
         // However, standard prometheus pattern is to gather everything fresh.
-        // But since we call this function multiple times (once per datastore), we can't simple reset() here 
+        // But since we call this function multiple times (once per datastore), we can't simple reset() here
         // without wiping previous datastores' work.
         //
-        // A better approach for per-datastore isolation would be to use a separate registry or 
+        // A better approach for per-datastore isolation would be to use a separate registry or
         // to be smart about what we remove. But GaugeVec doesn't easily support "remove by matching label".
         //
-        // "No shortcuts": The correct way if we share GaugeVecs across datastores is to NOT reset here, 
+        // "No shortcuts": The correct way if we share GaugeVecs across datastores is to NOT reset here,
         // but reset ONCE at the start of the entire collection cycle.
-        
+
         // Efficient filtering: Sort by Group (Type, ID) then Time Descending
         let mut sorted_snapshots: Vec<_> = snapshots.iter().collect();
         sorted_snapshots.sort_by(|a, b| {
-            a.backup_type.cmp(&b.backup_type)
+            a.backup_type
+                .cmp(&b.backup_type)
                 .then_with(|| a.backup_id.cmp(&b.backup_id))
                 .then_with(|| b.backup_time.cmp(&a.backup_time)) // Descending time
         });
-        
+
         let mut exposed_count = 0;
         let mut current_group = None;
         let mut group_counter = 0;
 
         for snapshot in sorted_snapshots {
             let group_key = (&snapshot.backup_type, &snapshot.backup_id);
-            
+
             if Some(group_key) != current_group {
                 current_group = Some(group_key);
                 group_counter = 0;
             }
-            
+
             if self.snapshot_history_limit > 0 && group_counter >= self.snapshot_history_limit {
                 continue;
             }
@@ -690,7 +726,10 @@ impl MetricsCollector {
             let (size, comment) = if let Some((_time, s_comment)) =
                 comment_map.get(&(snapshot.backup_type.clone(), snapshot.backup_id.clone()))
             {
-                (snapshot.size.unwrap_or(0) as i64, s_comment.as_deref().unwrap_or("").to_string())
+                (
+                    snapshot.size.unwrap_or(0) as i64,
+                    s_comment.as_deref().unwrap_or("").to_string(),
+                )
             } else {
                 (snapshot.size.unwrap_or(0) as i64, "".to_string())
             };
@@ -724,37 +763,55 @@ impl MetricsCollector {
 
             // Verification status
             let verified = if let Some(ver) = &snapshot.verification {
-                if ver.state == "ok" { 1.0 } else { 0.0 }
+                if ver.state == "ok" {
+                    1.0
+                } else {
+                    0.0
+                }
             } else {
                 0.0 // Not verified or unknown
             };
-            self.snapshot_verified.with_label_values(&labels).set(verified);
+            self.snapshot_verified
+                .with_label_values(&labels)
+                .set(verified);
 
             // Protection status
-            let protected = if snapshot.protected.unwrap_or(false) { 1.0 } else { 0.0 };
-            self.snapshot_protected.with_label_values(&labels).set(protected);
+            let protected = if snapshot.protected.unwrap_or(false) {
+                1.0
+            } else {
+                0.0
+            };
+            self.snapshot_protected
+                .with_label_values(&labels)
+                .set(protected);
         }
-        
+
         debug!(
-            "Exposed {}/{} snapshots for datastore {} (limit: {})", 
-            exposed_count, 
-            snapshots.len(), 
-            datastore, 
+            "Exposed {}/{} snapshots for datastore {} (limit: {})",
+            exposed_count,
+            snapshots.len(),
+            datastore,
             self.snapshot_history_limit
         );
     }
 
-    fn update_task_metrics(&self, tasks: &[crate::client::Task], comment_map: &std::collections::HashMap<String, String>) {
+    fn update_task_metrics(
+        &self,
+        tasks: &[crate::client::Task],
+        comment_map: &std::collections::HashMap<String, String>,
+    ) {
         debug!("Updating task metrics for {} tasks", tasks.len());
-        
+
         // Count tasks by type and status and comment
-        let mut task_counts: std::collections::HashMap<(String, String, String), u64> = std::collections::HashMap::new();
+        let mut task_counts: std::collections::HashMap<(String, String, String), u64> =
+            std::collections::HashMap::new();
         // Count running tasks by type and comment
-        let mut running_counts: std::collections::HashMap<(String, String), u64> = std::collections::HashMap::new();
-        
+        let mut running_counts: std::collections::HashMap<(String, String), u64> =
+            std::collections::HashMap::new();
+
         for task in tasks {
             let mut comment = task.comment.clone().unwrap_or_default();
-            
+
             // If comment is empty, try to look it up in the map (from snapshots)
             if comment.is_empty() {
                 if let Some(worker_id) = &task.worker_id {
@@ -763,10 +820,10 @@ impl MetricsCollector {
                     }
                 }
             }
-            
+
             // Unwrap status or use "unknown"
             let status = task.status.clone().unwrap_or_else(|| "unknown".to_string());
-            
+
             // Count by type and status and comment
             let key = (task.worker_type.clone(), status.clone(), comment.clone());
             *task_counts.entry(key).or_insert(0) += 1;
@@ -781,19 +838,17 @@ impl MetricsCollector {
                 // Calculate duration for finished tasks
                 let duration = endtime - task.starttime;
                 // Use empty string for worker_id if None
-                let worker_id = task.worker_id.clone().unwrap_or_else(|| "unknown".to_string());
-                
+                let worker_id = task
+                    .worker_id
+                    .clone()
+                    .unwrap_or_else(|| "unknown".to_string());
+
                 self.task_duration_seconds
-                    .with_label_values(&[
-                        &task.worker_type, 
-                        &status, 
-                        &worker_id,
-                        &comment
-                    ])
+                    .with_label_values(&[&task.worker_type, &status, &worker_id, &comment])
                     .set(duration as f64);
-                    
-                 // Update last run timestamp
-                 self.task_last_run_timestamp
+
+                // Update last run timestamp
+                self.task_last_run_timestamp
                     .with_label_values(&[&task.worker_type])
                     .set(endtime as f64);
             }
@@ -805,7 +860,7 @@ impl MetricsCollector {
                 .with_label_values(&[&worker_type, &status, &comment])
                 .set(count as f64);
         }
-        
+
         // Update running task counts
         for ((worker_type, comment), count) in running_counts {
             self.task_running
@@ -816,31 +871,31 @@ impl MetricsCollector {
 
     fn update_gc_metrics(&self, datastore: &str, gc_status: &crate::client::GcStatus) {
         debug!("Updating GC metrics for {}", datastore);
-        
+
         if let Some(timestamp) = gc_status.last_run_endtime {
             self.gc_last_run_timestamp
                 .with_label_values(&[datastore])
                 .set(timestamp as f64);
         }
-        
+
         if let Some(duration) = gc_status.duration {
             self.gc_duration_seconds
                 .with_label_values(&[datastore])
                 .set(duration);
         }
-        
+
         if let Some(removed) = gc_status.removed_bytes {
             self.gc_removed_bytes
                 .with_label_values(&[datastore])
                 .set(removed as f64);
         }
-        
+
         if let Some(pending) = gc_status.pending_bytes {
             self.gc_pending_bytes
                 .with_label_values(&[datastore])
                 .set(pending as f64);
         }
-        
+
         if let Some(state) = &gc_status.last_run_state {
             let status_value = if state == "OK" { 1.0 } else { 0.0 };
             self.gc_status
@@ -851,22 +906,21 @@ impl MetricsCollector {
 
     fn update_tape_metrics(&self, drives: &[crate::client::TapeDrive]) {
         debug!("Updating tape metrics for {} drives", drives.len());
-        
+
         self.tape_drive_available.set(drives.len() as f64);
-        
+
         for drive in drives {
             let vendor = drive.vendor.as_deref().unwrap_or("unknown");
             let model = drive.model.as_deref().unwrap_or("unknown");
             let serial = drive.serial.as_deref().unwrap_or("unknown");
-            
+
             self.tape_drive_info
                 .with_label_values(&[drive.name.as_str(), vendor, model, serial])
                 .set(1.0);
         }
     }
 
-
-        fn update_node_metrics(&self, status: &NodeStatus) {
+    fn update_node_metrics(&self, status: &NodeStatus) {
         debug!("Updating node metrics");
         self.host_cpu_usage.set(status.cpu);
         self.host_io_wait.set(status.wait);
@@ -903,7 +957,12 @@ impl MetricsCollector {
         }
     }
 
-    fn update_backup_metrics(&self, datastore: &str, groups: &[BackupGroup], comment_map: &std::collections::HashMap<(String, String), (i64, Option<String>)>) {
+    fn update_backup_metrics(
+        &self,
+        datastore: &str,
+        groups: &[BackupGroup],
+        comment_map: &std::collections::HashMap<(String, String), (i64, Option<String>)>,
+    ) {
         debug!(
             "Updating backup metrics for {} groups in {}",
             groups.len(),
@@ -912,18 +971,24 @@ impl MetricsCollector {
         for group in groups {
             // Get comment from the latest snapshot via comment_map
             let key = (group.backup_type.clone(), group.backup_id.clone());
-            let comment = comment_map.get(&key)
+            let comment = comment_map
+                .get(&key)
                 .and_then(|(_time, comment)| comment.as_deref())
                 .unwrap_or("");
-            
+
             // Truncate comment to 50 chars for Prometheus label compatibility
             let truncated_comment = if comment.len() > 50 {
                 &comment[..50]
             } else {
                 comment
             };
-            
-            let labels = &[datastore, &group.backup_type, &group.backup_id, truncated_comment];
+
+            let labels = &[
+                datastore,
+                &group.backup_type,
+                &group.backup_id,
+                truncated_comment,
+            ];
 
             self.snapshot_count
                 .with_label_values(labels)
