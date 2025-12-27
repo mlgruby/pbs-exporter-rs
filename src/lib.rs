@@ -1,6 +1,6 @@
 //! # PBS Exporter
 //!
-//! A professional-grade Prometheus metrics exporter for Proxmox Backup Server 4.x.
+//! Prometheus metrics exporter for Proxmox Backup Server 4.x.
 //!
 //! ## Overview
 //!
