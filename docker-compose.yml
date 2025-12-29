@@ -1,6 +1,6 @@
 services:
   pbs-exporter:
-    image: ghcr.io/mlgruby/pbs-exporter-rs:main
+    image: ghcr.io/mlgruby/pbs-exporter-rs:latest
     container_name: pbs-exporter
     ports:
       - "9101:9101"
