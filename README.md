@@ -7,13 +7,13 @@ A Prometheus metrics exporter for Proxmox Backup Server 4.x, written in Rust.
 
 ## Features
 
-- 🚀 **Comprehensive Metrics**: Host system, datastore, snapshots, tasks, GC, and tape metrics
-- 🔒 **Secure**: API token authentication with TLS support
-- ⚡ **Fast**: Built with Rust and async I/O (Tokio)
-- 📊 **Prometheus Native**: Standard Prometheus exposition format
-- 🐳 **Docker Ready**: Optimized Alpine-based image (23.4MB)
-- 🛠️ **Production Ready**: Comprehensive error handling, logging, and testing
-- 📉 **Cardinality Control**: Configurable snapshot history limits
+- **Comprehensive Metrics**: Host system, datastore, snapshots, tasks, GC, and tape metrics
+- **Secure**: API token authentication with TLS support
+- **Fast**: Built with Rust and async I/O (Tokio)
+- **Prometheus Native**: Standard Prometheus exposition format
+- **Docker Ready**: Optimized Alpine-based image (23.4MB)
+- **Production Ready**: Comprehensive error handling, logging, and testing
+- **Cardinality Control**: Configurable snapshot history limits
 
 ## Metrics Exposed
 
