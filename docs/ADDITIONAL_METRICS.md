@@ -2,7 +2,7 @@
 
 Based on the PBS API investigation, here are additional metrics we could add:
 
-## Currently Implemented ✅
+## Currently Implemented
 
 1. **Host Metrics**: CPU, Memory, Swap, Disk, Load, Uptime
 2. **Datastore Metrics**: Total, Used, Available space
