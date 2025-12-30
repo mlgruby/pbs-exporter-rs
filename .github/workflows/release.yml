@@ -31,12 +31,21 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       
+      - name: Extract version from Cargo.toml
+        id: version
+        run: |
+          VERSION=$(grep '^version' Cargo.toml | head -1 | cut -d'"' -f2)
+          echo "version=v$VERSION" >> $GITHUB_OUTPUT
+          echo "raw_version=$VERSION" >> $GITHUB_OUTPUT
+
       - name: Extract metadata for Docker
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
+            type=raw,value=${{ steps.version.outputs.version }}
+            type=raw,value=${{ steps.version.outputs.raw_version }}
             type=ref,event=branch
             type=raw,value=latest
             type=semver,pattern={{version}}
@@ -67,11 +76,7 @@ jobs:
           cp README.md LICENSE release/
           tar -czf pbs-exporter-linux-amd64.tar.gz -C release .
       
-      - name: Extract version from Cargo.toml
-        id: version
-        run: |
-          VERSION=$(grep '^version' Cargo.toml | head -1 | cut -d'"' -f2)
-          echo "version=v$VERSION" >> $GITHUB_OUTPUT
+
       
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
