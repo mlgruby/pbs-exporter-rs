@@ -5,7 +5,7 @@
 ### Host System Metrics
 
 | Metric | Description | Source |
-|--------|-------------|--------|
+| -------- | ------------- | -------- |
 | `pbs_host_cpu_usage` | CPU usage (0.0-1.0) | `/nodes/localhost/status` |
 | `pbs_host_io_wait` | I/O wait fraction | `/nodes/localhost/status` |
 | `pbs_host_load1` | 1-minute load average | `/nodes/localhost/status` |
@@ -25,7 +25,7 @@
 ### Datastore Metrics
 
 | Metric | Description | Labels |
-|--------|-------------|--------|
+| -------- | ------------- | -------- |
 | `pbs_datastore_total_bytes` | Total datastore size | `datastore` |
 | `pbs_datastore_used_bytes` | Used space | `datastore` |
 | `pbs_datastore_available_bytes` | Available space | `datastore` |
@@ -33,7 +33,7 @@
 ### Backup Metrics
 
 | Metric | Description | Labels |
-|--------|-------------|--------|
+| -------- | ------------- | -------- |
 | `pbs_snapshot_count` | Number of snapshots | `datastore`, `backup_type`, `backup_id` |
 | `pbs_snapshot_last_timestamp_seconds` | Last backup time (Unix) | `datastore`, `backup_type`, `backup_id` |
 | `pbs_snapshot_info` | Snapshot timeline info (value=timestamp) | `datastore`, `backup_type`, `backup_id`, `comment`, `timestamp` |
@@ -44,7 +44,7 @@
 ### Task Metrics
 
 | Metric | Description | Labels |
-|--------|-------------|--------|
+| -------- | ------------- | -------- |
 | `pbs_task_total` | Total tasks count | `worker_type`, `status` |
 
 - **`pbs_task_duration_seconds`**
@@ -59,7 +59,7 @@
 ### GC Metrics
 
 | Metric | Description | Labels |
-|--------|-------------|--------|
+| -------- | ------------- | -------- |
 | `pbs_gc_last_run_timestamp` | Last GC run time | `datastore` |
 | `pbs_gc_duration_seconds` | Last GC duration | `datastore`, `status` |
 | `pbs_gc_removed_bytes` | Bytes removed in GC | `datastore` |
@@ -69,14 +69,14 @@
 ### Tape Metrics
 
 | Metric | Description | Labels |
-|--------|-------------|--------|
+| -------- | ------------- | -------- |
 | `pbs_tape_drive_info` | Tape drive info (1=present) | `name`, `vendor`, `model`, `serial` |
 | `pbs_tape_drive_available` | Available tape drives | - |
 
 ### Exporter Metrics
 
 | Metric | Description | Labels |
-|--------|-------------|--------|
+| -------- | ------------- | -------- |
 | `pbs_up` | Scrape success (1=success, 0=fail) | - |
 | `pbs_version` | PBS version info | `version`, `release`, `repoid` |
 
@@ -158,16 +158,17 @@ Then scrape both:
 ## What You're Getting
 
 Your current setup captures:
-✅ **CPU**: Usage, I/O wait, load averages  
-✅ **Memory**: RAM and swap usage  
-✅ **Disk**: Root filesystem capacity  
-✅ **Storage**: Datastore capacity per datastore  
-✅ **Backups**: Snapshot counts and last backup times  
-✅ **System**: Uptime, PBS version  
 
-❌ **Network I/O**: Not in PBS API (use node_exporter)  
-❌ **Disk I/O**: Not in PBS API (use node_exporter)  
-⚠️ **Comments**: Available but not exposed (can add if needed)
+- **CPU**: Usage, I/O wait, load averages
+- **Memory**: RAM and swap usage
+- **Disk**: Root filesystem capacity
+- **Storage**: Datastore capacity per datastore
+- **Backups**: Snapshot counts and last backup times
+- **System**: Uptime, PBS version
+
+- **Network I/O**: Not in PBS API (use node_exporter)
+- **Disk I/O**: Not in PBS API (use node_exporter)
+- **Comments**: Available but not exposed (can add if needed)
 
 ## Next Steps
 

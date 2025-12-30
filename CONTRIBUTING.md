@@ -13,10 +13,10 @@ We follow a **Gitflow-inspired workflow** with two main branches:
 
 Both `main` and `develop` are **protected branches**:
 
-- ❌ No direct commits allowed
-- ❌ No force pushes allowed
-- ✅ All changes must go through Pull Requests
-- ✅ All CI checks must pass before merging
+- No direct commits allowed
+- No force pushes allowed
+- All changes must go through Pull Requests
+- All CI checks must pass before merging
 
 ## Contribution Workflow
 
@@ -111,12 +111,12 @@ git push origin feature/your-feature-name
 
 ### PR Requirements
 
-- ✅ All CI checks must pass
-- ✅ Code must be formatted (`cargo fmt`)
-- ✅ No clippy warnings (`cargo clippy`)
-- ✅ Tests must pass (`cargo test`)
-- ✅ Docker build must succeed
-- ✅ Branch must be up-to-date with `develop`
+- All CI checks must pass
+- Code must be formatted (`cargo fmt`)
+- No clippy warnings (`cargo clippy`)
+- Tests must pass (`cargo test`)
+- Docker build must succeed
+- Branch must be up-to-date with `develop`
 
 ### PR Review Process
 
@@ -226,4 +226,4 @@ By contributing, you agree that your contributions will be licensed under the Ap
 
 ---
 
-Thank you for contributing to PBS Exporter! 🚀
+Thank you for contributing to PBS Exporter!
