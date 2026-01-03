@@ -9,6 +9,12 @@ use prometheus::{Encoder, Gauge, GaugeVec, Opts, Registry, TextEncoder};
 use std::sync::Arc;
 use tracing::{debug, error, info};
 
+// Interned strings to avoid repeated allocations
+const UNKNOWN: &str = "unknown";
+const EMPTY_STR: &str = "";
+const RUNNING: &str = "running";
+const OK: &str = "ok";
+
 /// Metrics collector for PBS exporter.
 #[derive(Clone)]
 pub struct MetricsCollector {
@@ -49,6 +55,7 @@ pub struct MetricsCollector {
     snapshot_info: GaugeVec,
     snapshot_size_bytes: GaugeVec,
     snapshot_verified: GaugeVec,
+    snapshot_verification_timestamp: GaugeVec,
     snapshot_protected: GaugeVec,
 
     // Task metrics
@@ -300,11 +307,30 @@ impl MetricsCollector {
                 "backup_id",
                 "comment",
                 "timestamp",
+                "verified",
             ],
         )
         .map_err(|e| PbsError::Metrics(e.to_string()))?;
         registry
             .register(Box::new(snapshot_size_bytes.clone()))
+            .map_err(|e| PbsError::Metrics(e.to_string()))?;
+
+        let snapshot_verification_timestamp = GaugeVec::new(
+            Opts::new(
+                "pbs_snapshot_verification_timestamp_seconds",
+                "Timestamp of last verification in seconds",
+            ),
+            &[
+                "datastore",
+                "backup_type",
+                "backup_id",
+                "comment",
+                "timestamp",
+            ],
+        )
+        .map_err(|e| PbsError::Metrics(e.to_string()))?;
+        registry
+            .register(Box::new(snapshot_verification_timestamp.clone()))
             .map_err(|e| PbsError::Metrics(e.to_string()))?;
 
         let snapshot_verified = GaugeVec::new(
@@ -490,6 +516,7 @@ impl MetricsCollector {
             snapshot_info,
             snapshot_size_bytes,
             snapshot_verified,
+            snapshot_verification_timestamp,
             snapshot_protected,
             task_total,
             task_duration_seconds,
@@ -555,6 +582,7 @@ impl MetricsCollector {
         self.snapshot_info.reset();
         self.snapshot_size_bytes.reset();
         self.snapshot_verified.reset();
+        self.snapshot_verification_timestamp.reset();
         self.snapshot_protected.reset();
         self.snapshot_last_timestamp_seconds.reset();
 
@@ -597,20 +625,26 @@ impl MetricsCollector {
                 }
             };
 
-            // Build a map of (backup_type, backup_id) -> latest comment
-            let mut comment_map = std::collections::HashMap::new();
+            // Build a map of (backup_type, backup_id) -> (latest_time, comment)
+            // Use owned keys for the map but avoid cloning during iteration
+            let mut comment_map: std::collections::HashMap<
+                (String, String),
+                (i64, Option<String>),
+            > = std::collections::HashMap::new();
             for snapshot in &snapshots {
                 let key = (snapshot.backup_type.clone(), snapshot.backup_id.clone());
                 // Keep the comment from the latest snapshot (highest backup_time)
-                comment_map
-                    .entry(key.clone())
-                    .and_modify(|(time, _comment): &mut (i64, Option<String>)| {
+                match comment_map.get_mut(&key) {
+                    Some((time, comment)) => {
                         if snapshot.backup_time > *time {
                             *time = snapshot.backup_time;
-                            *_comment = snapshot.comment.clone();
+                            *comment = snapshot.comment.clone();
                         }
-                    })
-                    .or_insert((snapshot.backup_time, snapshot.comment.clone()));
+                    }
+                    None => {
+                        comment_map.insert(key, (snapshot.backup_time, snapshot.comment.clone()));
+                    }
+                }
             }
 
             // Populate task_comment_map from the comment_map
@@ -728,52 +762,73 @@ impl MetricsCollector {
             {
                 (
                     snapshot.size.unwrap_or(0) as i64,
-                    s_comment.as_deref().unwrap_or("").to_string(),
+                    s_comment.as_deref().unwrap_or(EMPTY_STR),
                 )
             } else {
-                (snapshot.size.unwrap_or(0) as i64, "".to_string())
+                (snapshot.size.unwrap_or(0) as i64, EMPTY_STR)
             };
 
-            // Truncate comment
+            // Truncate comment - use string slice to avoid allocation
             let safe_comment = if comment.len() > 50 {
-                format!("{}...", &comment[..47])
+                &comment[..47]
             } else {
                 comment
             };
 
             let timestamp_seconds = snapshot.backup_time;
+            let timestamp_str = timestamp_seconds.to_string();
 
-            let labels = [
+            // Base labels for most metrics
+            let base_labels = [
                 datastore,
                 &snapshot.backup_type,
                 &snapshot.backup_id,
-                &safe_comment,
-                &timestamp_seconds.to_string(),
+                safe_comment,
+                &timestamp_str,
             ];
 
             // Info metric (timestamp)
             self.snapshot_info
-                .with_label_values(&labels)
+                .with_label_values(&base_labels)
                 .set(timestamp_seconds as f64);
 
-            // Size metric
+            // Verification logic
+            let (verified_val, verified_str, verify_time) =
+                if let Some(ver) = &snapshot.verification {
+                    let is_ok = ver.state == OK;
+                    (
+                        if is_ok { 1.0 } else { 0.0 },
+                        if is_ok { "true" } else { "false" },
+                        ver.last_verify,
+                    )
+                } else {
+                    (0.0, "false", None)
+                };
+
+            // Size metric needs extra "verified" label
+            let size_labels = [
+                datastore,
+                &snapshot.backup_type,
+                &snapshot.backup_id,
+                safe_comment,
+                &timestamp_str,
+                verified_str,
+            ];
+
             self.snapshot_size_bytes
-                .with_label_values(&labels)
+                .with_label_values(&size_labels)
                 .set(size as f64);
 
-            // Verification status
-            let verified = if let Some(ver) = &snapshot.verification {
-                if ver.state == "ok" {
-                    1.0
-                } else {
-                    0.0
-                }
-            } else {
-                0.0 // Not verified or unknown
-            };
+            // Verification timestamp metric
+            if let Some(ts) = verify_time {
+                self.snapshot_verification_timestamp
+                    .with_label_values(&base_labels)
+                    .set(ts as f64);
+            }
+
             self.snapshot_verified
-                .with_label_values(&labels)
-                .set(verified);
+                .with_label_values(&base_labels)
+                .set(verified_val);
 
             // Protection status
             let protected = if snapshot.protected.unwrap_or(false) {
@@ -782,7 +837,7 @@ impl MetricsCollector {
                 0.0
             };
             self.snapshot_protected
-                .with_label_values(&labels)
+                .with_label_values(&base_labels)
                 .set(protected);
         }
 
@@ -802,49 +857,45 @@ impl MetricsCollector {
     ) {
         debug!("Updating task metrics for {} tasks", tasks.len());
 
-        // Count tasks by type and status and comment
-        let mut task_counts: std::collections::HashMap<(String, String, String), u64> =
+        // Count tasks by type and status and comment - use &str to avoid clones
+        let mut task_counts: std::collections::HashMap<(&str, &str, &str), u64> =
             std::collections::HashMap::new();
         // Count running tasks by type and comment
-        let mut running_counts: std::collections::HashMap<(String, String), u64> =
+        let mut running_counts: std::collections::HashMap<(&str, &str), u64> =
             std::collections::HashMap::new();
 
         for task in tasks {
-            let mut comment = task.comment.clone().unwrap_or_default();
-
-            // If comment is empty, try to look it up in the map (from snapshots)
-            if comment.is_empty() {
-                if let Some(worker_id) = &task.worker_id {
-                    if let Some(mapped_comment) = comment_map.get(worker_id) {
-                        comment = mapped_comment.clone();
-                    }
-                }
-            }
+            // Use as_deref to avoid cloning
+            let comment = task.comment.as_deref().unwrap_or_else(|| {
+                // If comment is empty, try to look it up in the map (from snapshots)
+                task.worker_id
+                    .as_ref()
+                    .and_then(|wid| comment_map.get(wid.as_str()))
+                    .map(|s| s.as_str())
+                    .unwrap_or(EMPTY_STR)
+            });
 
             // Unwrap status or use "unknown"
-            let status = task.status.clone().unwrap_or_else(|| "unknown".to_string());
+            let status = task.status.as_deref().unwrap_or(UNKNOWN);
 
-            // Count by type and status and comment
-            let key = (task.worker_type.clone(), status.clone(), comment.clone());
+            // Count by type and status and comment - clone only when inserting
+            let key = (task.worker_type.as_str(), status, comment);
             *task_counts.entry(key).or_insert(0) += 1;
 
             // Track currently running tasks
             // If endtime is None, it's running. status might be "running" or something else.
             // pbs_task_running only tracks worker_type and comment
-            if task.endtime.is_none() || status == "running" {
-                let run_key = (task.worker_type.clone(), comment.clone());
+            if task.endtime.is_none() || status == RUNNING {
+                let run_key = (task.worker_type.as_str(), comment);
                 *running_counts.entry(run_key).or_insert(0) += 1;
             } else if let Some(endtime) = task.endtime {
                 // Calculate duration for finished tasks
                 let duration = endtime - task.starttime;
                 // Use empty string for worker_id if None
-                let worker_id = task
-                    .worker_id
-                    .clone()
-                    .unwrap_or_else(|| "unknown".to_string());
+                let worker_id = task.worker_id.as_deref().unwrap_or(UNKNOWN);
 
                 self.task_duration_seconds
-                    .with_label_values(&[&task.worker_type, &status, &worker_id, &comment])
+                    .with_label_values(&[task.worker_type.as_str(), status, worker_id, comment])
                     .set(duration as f64);
 
                 // Update last run timestamp
@@ -897,7 +948,11 @@ impl MetricsCollector {
         }
 
         if let Some(state) = &gc_status.last_run_state {
-            let status_value = if state == "OK" { 1.0 } else { 0.0 };
+            let status_value = if state.eq_ignore_ascii_case(OK) {
+                1.0
+            } else {
+                0.0
+            };
             self.gc_status
                 .with_label_values(&[datastore])
                 .set(status_value);
@@ -910,9 +965,9 @@ impl MetricsCollector {
         self.tape_drive_available.set(drives.len() as f64);
 
         for drive in drives {
-            let vendor = drive.vendor.as_deref().unwrap_or("unknown");
-            let model = drive.model.as_deref().unwrap_or("unknown");
-            let serial = drive.serial.as_deref().unwrap_or("unknown");
+            let vendor = drive.vendor.as_deref().unwrap_or(UNKNOWN);
+            let model = drive.model.as_deref().unwrap_or(UNKNOWN);
+            let serial = drive.serial.as_deref().unwrap_or(UNKNOWN);
 
             self.tape_drive_info
                 .with_label_values(&[drive.name.as_str(), vendor, model, serial])
@@ -974,7 +1029,7 @@ impl MetricsCollector {
             let comment = comment_map
                 .get(&key)
                 .and_then(|(_time, comment)| comment.as_deref())
-                .unwrap_or("");
+                .unwrap_or(EMPTY_STR);
 
             // Truncate comment to 50 chars for Prometheus label compatibility
             let truncated_comment = if comment.len() > 50 {
@@ -1011,11 +1066,21 @@ impl MetricsCollector {
     pub fn encode(&self) -> Result<String> {
         let encoder = TextEncoder::new();
         let metric_families = self.registry.gather();
-        let mut buffer = Vec::new();
-        encoder
-            .encode(&metric_families, &mut buffer)
-            .map_err(|e| PbsError::Metrics(e.to_string()))?;
 
-        String::from_utf8(buffer).map_err(|e| PbsError::Metrics(e.to_string()))
+        // Reuse buffer to avoid allocation on every scrape
+        thread_local! {
+            static BUFFER: std::cell::RefCell<Vec<u8>> = std::cell::RefCell::new(Vec::with_capacity(8192));
+        }
+
+        BUFFER.with(|buf| {
+            let mut buffer = buf.borrow_mut();
+            buffer.clear();
+
+            encoder
+                .encode(&metric_families, &mut *buffer)
+                .map_err(|e| PbsError::Metrics(e.to_string()))?;
+
+            String::from_utf8(buffer.clone()).map_err(|e| PbsError::Metrics(e.to_string()))
+        })
     }
 }

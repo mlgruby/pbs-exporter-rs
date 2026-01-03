@@ -65,11 +65,16 @@ pub async fn start_server(listen_address: &str, metrics: MetricsCollector) -> Re
         .layer(TraceLayer::new_for_http())
         .with_state(state);
 
+    info!("Routes configured: /metrics, /health, /");
     info!("Starting HTTP server on {}", listen_address);
 
     let listener = TcpListener::bind(listen_address).await?;
+    info!(
+        "Successfully bound to {}, server is ready to accept connections",
+        listen_address
+    );
 
-    axum::serve(listener, app)
+    axum::serve(listener, app.into_make_service())
         .await
         .map_err(|e| crate::error::PbsError::Server(e.to_string()))?;
 
@@ -78,6 +83,7 @@ pub async fn start_server(listen_address: &str, metrics: MetricsCollector) -> Re
 
 /// Handler for /metrics endpoint.
 async fn metrics_handler(State(state): State<AppState>) -> Response {
+    info!("=== METRICS HANDLER CALLED ===");
     info!("Received metrics scrape request");
 
     // Collect fresh metrics
@@ -102,11 +108,13 @@ async fn metrics_handler(State(state): State<AppState>) -> Response {
 
 /// Handler for /health endpoint.
 async fn health_handler() -> Response {
+    info!("=== HEALTH HANDLER CALLED ===");
     (StatusCode::OK, "OK").into_response()
 }
 
 /// Handler for root endpoint.
 async fn root_handler() -> Response {
+    info!("=== ROOT HANDLER CALLED ===");
     let html = r#"
 <!DOCTYPE html>
 <html>
