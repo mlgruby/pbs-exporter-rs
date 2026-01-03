@@ -73,15 +73,11 @@ impl PbsClient {
             return Err(PbsError::Api(response.error_for_status().unwrap_err()));
         }
 
-        let body = response.text().await?;
-        debug!("Raw API response: {}", body);
-
-        let api_response: ApiResponse<NodeStatus> = serde_json::from_str(&body).map_err(|e| {
-            PbsError::ParseError(format!(
-                "Failed to parse node status: {}. Body: {}",
-                e, body
-            ))
-        })?;
+        // Parse JSON directly from response stream to avoid buffering
+        let api_response: ApiResponse<NodeStatus> = response
+            .json()
+            .await
+            .map_err(|e| PbsError::ParseError(format!("Failed to parse node status: {}", e)))?;
         Ok(api_response.data)
     }
 
@@ -130,16 +126,13 @@ impl PbsClient {
             return Err(PbsError::Api(response.error_for_status().unwrap_err()));
         }
 
-        let body = response.text().await?;
-        debug!("Raw backup groups response for {}: {}", datastore, body);
-
-        let api_response: ApiResponse<Vec<BackupGroup>> =
-            serde_json::from_str(&body).map_err(|e| {
-                PbsError::ParseError(format!(
-                    "Failed to parse backup groups: {}. Body: {}",
-                    e, body
-                ))
-            })?;
+        // Parse JSON directly from response stream
+        let api_response: ApiResponse<Vec<BackupGroup>> = response.json().await.map_err(|e| {
+            PbsError::ParseError(format!(
+                "Failed to parse backup groups for {}: {}",
+                datastore, e
+            ))
+        })?;
         Ok(api_response.data)
     }
 
@@ -276,6 +269,9 @@ pub struct Snapshot {
 pub struct VerificationStatus {
     /// Verification state (ok, failed, none, etc.)
     pub state: String,
+    /// Last verification timestamp (Unix epoch)
+    #[serde(rename = "last-verify")]
+    pub last_verify: Option<i64>,
 }
 
 impl PbsClient {
@@ -303,21 +299,19 @@ impl PbsClient {
             return Err(PbsError::Api(response.error_for_status().unwrap_err()));
         }
 
-        let body = response.text().await?;
-        debug!(
-            "Raw snapshots response for {}: {} bytes",
-            datastore,
-            body.len()
-        );
+        // Parse JSON directly from response stream
+        let api_response: ApiResponse<Vec<Snapshot>> = response.json().await.map_err(|e| {
+            PbsError::ParseError(format!(
+                "Failed to parse snapshots for {}: {}",
+                datastore, e
+            ))
+        })?;
 
-        let api_response: ApiResponse<Vec<Snapshot>> =
-            serde_json::from_str(&body).map_err(|e| {
-                PbsError::ParseError(format!(
-                    "Failed to parse snapshots: {}. Body preview: {}...",
-                    e,
-                    &body[..body.len().min(200)]
-                ))
-            })?;
+        debug!(
+            "Fetched {} snapshots for {}",
+            api_response.data.len(),
+            datastore
+        );
         Ok(api_response.data)
     }
 }
