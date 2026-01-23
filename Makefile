@@ -33,7 +33,7 @@ fmt-check: ## Check code formatting
 	cargo fmt --all -- --check
 
 clippy: ## Run clippy linter
-	cargo clippy --all-features -- -D warnings
+	cargo clippy --all-targets --all-features -- -D warnings
 
 audit: ## Run security audit
 	cargo audit
@@ -89,7 +89,7 @@ compose-restart: ## Restart docker-compose services
 	docker-compose restart
 
 # CI/CD simulation
-ci: fmt-check clippy test build docker-build ## Run all CI checks locally
+ci: check fmt fmt-check clippy audit test build docker-build ## Run all CI checks locally
 
 # Development workflow
 dev: fmt clippy test ## Run development checks (format, lint, test)

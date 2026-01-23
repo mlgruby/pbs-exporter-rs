@@ -58,10 +58,12 @@ A Prometheus metrics exporter for Proxmox Backup Server 4.x, written in Rust.
 - `pbs_tape_drive_info{name,vendor,model,serial}` - Tape drive information
 - `pbs_tape_drive_available` - Number of available tape drives
 
-### Exporter Metrics
+### Exporter Self-Monitoring Metrics
 
 - `pbs_up` - Exporter health (1 = success, 0 = failure)
 - `pbs_version{version,release,repoid}` - PBS version info
+- `pbs_exporter_scrape_duration_seconds` - Duration of last scrape operation
+- `pbs_exporter_memory_usage_bytes` - Current memory usage of the exporter
 
 ## Installation
 
