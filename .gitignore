@@ -19,3 +19,6 @@
 
 # OS
 Thumbs.db
+
+# Claude Code artifacts
+.claude/
