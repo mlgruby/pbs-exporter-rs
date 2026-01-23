@@ -23,14 +23,33 @@ struct AppState {
     metrics: Arc<MetricsCollector>,
 }
 
-/// Start the HTTP server.
+/// Start the HTTP server for serving Prometheus metrics.
+///
+/// Creates and starts an Axum-based HTTP server that exposes three endpoints:
+/// - `/metrics` - Prometheus metrics endpoint (scrapes PBS on each request)
+/// - `/health` - Health check endpoint (always returns OK)
+/// - `/` - Root endpoint with HTML information page
+///
+/// The server runs indefinitely until the process is terminated or an error occurs.
 ///
 /// # Arguments
 ///
-/// * `listen_address` - Address to bind to (e.g., "0.0.0.0:9101")
-/// * `metrics` - Metrics collector instance
+/// * `listen_address` - Address to bind to (e.g., "0.0.0.0:9101" or "127.0.0.1:9101")
+/// * `metrics` - Metrics collector instance that will be used to gather PBS metrics
 ///
-/// # Examples
+/// # Returns
+///
+/// Returns `Ok(())` if the server starts successfully and runs until shutdown,
+/// or an error if server startup or operation fails.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - The listen address is invalid or cannot be parsed
+/// - The port is already in use or cannot be bound
+/// - A network error occurs during server operation
+///
+/// # Example
 ///
 /// ```no_run
 /// use pbs_exporter::server::start_server;
@@ -39,7 +58,7 @@ struct AppState {
 /// use pbs_exporter::config::PbsConfig;
 ///
 /// #[tokio::main]
-/// async fn main() {
+/// async fn main() -> Result<(), Box<dyn std::error::Error>> {
 ///     let config = PbsConfig {
 ///         endpoint: "https://pbs.example.com:8007".to_string(),
 ///         token_id: "user@pam!token".to_string(),
@@ -48,9 +67,10 @@ struct AppState {
 ///         timeout_seconds: 5,
 ///         snapshot_history_limit: 0,
 ///     };
-///     let client = PbsClient::new(config).unwrap();
-///     let metrics = MetricsCollector::new(std::sync::Arc::new(client), 0).unwrap();
-///     start_server("0.0.0.0:9101", metrics).await.unwrap();
+///     let client = PbsClient::new(config)?;
+///     let metrics = MetricsCollector::new(std::sync::Arc::new(client), 0)?;
+///     start_server("0.0.0.0:9101", metrics).await?;
+///     Ok(())
 /// }
 /// ```
 pub async fn start_server(listen_address: &str, metrics: MetricsCollector) -> Result<()> {

@@ -12,7 +12,7 @@ use std::path::Path;
 /// PBS server connection settings.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct PbsConfig {
-    /// PBS API endpoint URL (e.g., "https://pbs.example.com:8007")
+    /// PBS API endpoint URL (e.g., "<https://pbs.example.com:8007>")
     pub endpoint: String,
 
     /// API token ID (e.g., "user@pam!tokenid")
@@ -93,16 +93,45 @@ fn default_log_level() -> String {
 impl Settings {
     /// Load configuration from a file and environment variables.
     ///
+    /// Loads settings from a TOML configuration file (if provided) and merges
+    /// with environment variables prefixed with `PBS_EXPORTER_`. Environment
+    /// variables override file settings and use double underscores (`__`) as
+    /// separators for nested values (e.g., `PBS_EXPORTER__PBS__ENDPOINT`).
+    ///
     /// # Arguments
     ///
-    /// * `config_path` - Optional path to configuration file
+    /// * `config_path` - Optional path to TOML configuration file. If the file
+    ///   doesn't exist, only environment variables will be used.
     ///
-    /// # Examples
+    /// # Returns
+    ///
+    /// Returns a validated `Settings` struct containing PBS and exporter
+    /// configuration, or an error if configuration is invalid or missing
+    /// required values.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The configuration file exists but cannot be parsed
+    /// - Environment variables cannot be parsed
+    /// - Required fields (endpoint, token_id, token_secret) are missing or empty
+    /// - The resulting configuration fails validation
+    ///
+    /// # Example
     ///
     /// ```no_run
     /// use pbs_exporter::config::Settings;
     ///
+    /// // Load from file
     /// let settings = Settings::load(Some("config/default.toml")).unwrap();
+    /// println!("PBS endpoint: {}", settings.pbs.endpoint);
+    ///
+    /// // Load from environment variables only
+    /// std::env::set_var("PBS_EXPORTER__PBS__ENDPOINT", "https://pbs.local:8007");
+    /// std::env::set_var("PBS_EXPORTER__PBS__TOKEN_ID", "user@pam!token");
+    /// std::env::set_var("PBS_EXPORTER__PBS__TOKEN_SECRET", "secret");
+    /// let settings = Settings::load(None).unwrap();
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
     pub fn load(config_path: Option<&str>) -> Result<Self> {
         let mut builder = config::Config::builder();

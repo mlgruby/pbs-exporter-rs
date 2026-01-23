@@ -18,11 +18,12 @@ fn create_test_config(server_url: &str) -> PbsConfig {
     }
 }
 
+// WGT: Test health endpoint is accessible
 #[tokio::test]
 async fn test_health_endpoint() {
+    // Given: A mock PBS server with minimal status response
     let mut server = Server::new_async().await;
 
-    // Mock minimal PBS responses
     let _mock_status = server
         .mock("GET", "/api2/json/nodes/localhost/status")
         .with_status(200)
@@ -34,24 +35,25 @@ async fn test_health_endpoint() {
     let client = PbsClient::new(config).unwrap();
     let collector = MetricsCollector::new(std::sync::Arc::new(client), 0).unwrap();
 
-    // Start server in background
+    // When: Starting the server in background
     let server_handle = tokio::spawn(async move { start_server("127.0.0.1:0", collector).await });
 
     // Give server time to start
     tokio::time::sleep(Duration::from_millis(100)).await;
 
-    // Test would require actual HTTP client - this is a placeholder
+    // Then: Server should start successfully (placeholder for actual HTTP client test)
     // In a real scenario, you'd use reqwest to test the endpoints
 
     // Cleanup
     server_handle.abort();
 }
 
+// WGT: Test metrics endpoint returns valid Prometheus format
 #[tokio::test]
 async fn test_metrics_endpoint_returns_prometheus_format() {
+    // Given: A mock PBS server with complete endpoint responses
     let mut server = Server::new_async().await;
 
-    // Mock all required PBS endpoints
     let _mock_status = server
         .mock("GET", "/api2/json/nodes/localhost/status")
         .with_status(200)
@@ -84,11 +86,11 @@ async fn test_metrics_endpoint_returns_prometheus_format() {
     let client = PbsClient::new(config).unwrap();
     let collector = MetricsCollector::new(std::sync::Arc::new(client), 0).unwrap();
 
-    // Collect and encode metrics
+    // When: Collecting and encoding metrics
     collector.collect().await.unwrap();
     let metrics = collector.encode().unwrap();
 
-    // Verify Prometheus format
+    // Then: Metrics should be in valid Prometheus format with expected content
     assert!(metrics.contains("# HELP"));
     assert!(metrics.contains("# TYPE"));
     assert!(metrics.contains("pbs_up 1"));
@@ -102,8 +104,10 @@ async fn test_metrics_endpoint_returns_prometheus_format() {
     assert!(metrics.contains(r#"backup_type="vm""#));
 }
 
+// WGT: Test edge case with no datastores configured
 #[tokio::test]
 async fn test_edge_case_empty_datastores() {
+    // Given: A mock PBS server with no datastores configured
     let mut server = Server::new_async().await;
 
     let _mock_status = server
@@ -113,7 +117,6 @@ async fn test_edge_case_empty_datastores() {
         .create_async()
         .await;
 
-    // Empty datastore list
     let _mock_datastores = server
         .mock("GET", "/api2/json/status/datastore-usage")
         .with_status(200)
@@ -132,8 +135,10 @@ async fn test_edge_case_empty_datastores() {
     let client = PbsClient::new(config).unwrap();
     let collector = MetricsCollector::new(std::sync::Arc::new(client), 0).unwrap();
 
-    // Should not panic with empty datastores
+    // When: Collecting metrics with empty datastore list
     let result = collector.collect().await;
+
+    // Then: Collection should succeed without panicking
     assert!(result.is_ok());
 
     let metrics = collector.encode().unwrap();
@@ -141,8 +146,10 @@ async fn test_edge_case_empty_datastores() {
     assert!(metrics.contains("pbs_host_cpu_usage"));
 }
 
+// WGT: Test edge case with datastore having no backup groups
 #[tokio::test]
 async fn test_edge_case_empty_backup_groups() {
+    // Given: A mock PBS server with a datastore that has no backup groups
     let mut server = Server::new_async().await;
 
     let _mock_status = server
@@ -159,7 +166,6 @@ async fn test_edge_case_empty_backup_groups() {
         .create_async()
         .await;
 
-    // Empty backup groups
     let _mock_groups = server
         .mock("GET", "/api2/json/admin/datastore/empty-store/groups")
         .with_status(200)
@@ -178,7 +184,10 @@ async fn test_edge_case_empty_backup_groups() {
     let client = PbsClient::new(config).unwrap();
     let collector = MetricsCollector::new(std::sync::Arc::new(client), 0).unwrap();
 
+    // When: Collecting metrics from empty datastore
     let result = collector.collect().await;
+
+    // Then: Collection should succeed and include datastore capacity metrics
     assert!(result.is_ok());
 
     let metrics = collector.encode().unwrap();
@@ -186,8 +195,10 @@ async fn test_edge_case_empty_backup_groups() {
     assert!(metrics.contains(r#"pbs_datastore_total_bytes{datastore="empty-store"}"#));
 }
 
+// WGT: Test datastore names with special characters are handled correctly
 #[tokio::test]
 async fn test_edge_case_special_characters_in_datastore_name() {
+    // Given: A mock PBS server with datastore name containing special characters
     let mut server = Server::new_async().await;
 
     let _mock_status = server
@@ -197,7 +208,6 @@ async fn test_edge_case_special_characters_in_datastore_name() {
         .create_async()
         .await;
 
-    // Datastore with special characters
     let _mock_datastores = server
         .mock("GET", "/api2/json/status/datastore-usage")
         .with_status(200)
@@ -223,15 +233,20 @@ async fn test_edge_case_special_characters_in_datastore_name() {
     let client = PbsClient::new(config).unwrap();
     let collector = MetricsCollector::new(std::sync::Arc::new(client), 0).unwrap();
 
+    // When: Collecting metrics with special characters in datastore name
     let result = collector.collect().await;
+
+    // Then: Collection should succeed and properly handle the datastore name
     assert!(result.is_ok());
 
     let metrics = collector.encode().unwrap();
     assert!(metrics.contains(r#"datastore="backup-2024""#));
 }
 
+// WGT: Test partial API failure doesn't stop entire collection
 #[tokio::test]
 async fn test_partial_failure_continues_collection() {
+    // Given: A mock PBS server with two datastores where one fails with 403
     let mut server = Server::new_async().await;
 
     let _mock_status = server
@@ -248,7 +263,6 @@ async fn test_partial_failure_continues_collection() {
         .create_async()
         .await;
 
-    // First datastore succeeds
     let _mock_groups1 = server
         .mock("GET", "/api2/json/admin/datastore/store1/groups")
         .with_status(200)
@@ -256,7 +270,6 @@ async fn test_partial_failure_continues_collection() {
         .create_async()
         .await;
 
-    // Second datastore fails (403 forbidden)
     let _mock_groups2 = server
         .mock("GET", "/api2/json/admin/datastore/store2/groups")
         .with_status(403)
@@ -275,8 +288,10 @@ async fn test_partial_failure_continues_collection() {
     let client = PbsClient::new(config).unwrap();
     let collector = MetricsCollector::new(std::sync::Arc::new(client), 0).unwrap();
 
-    // Should succeed overall despite one datastore failing
+    // When: Collecting metrics with one datastore failing
     let result = collector.collect().await;
+
+    // Then: Overall collection should succeed with partial results
     assert!(result.is_ok());
 
     let metrics = collector.encode().unwrap();
@@ -287,8 +302,10 @@ async fn test_partial_failure_continues_collection() {
     assert!(metrics.contains(r#"datastore="store2""#));
 }
 
+// WGT: Test performance with large number of VMs (100+)
 #[tokio::test]
 async fn test_large_number_of_vms() {
+    // Given: A mock PBS server with 100 VMs (IDs 100-199)
     let mut server = Server::new_async().await;
 
     let _mock_status = server
@@ -305,7 +322,6 @@ async fn test_large_number_of_vms() {
         .create_async()
         .await;
 
-    // Generate 100 VMs
     let mut groups = Vec::new();
     for i in 100..200 {
         groups.push(format!(
@@ -333,7 +349,10 @@ async fn test_large_number_of_vms() {
     let client = PbsClient::new(config).unwrap();
     let collector = MetricsCollector::new(std::sync::Arc::new(client), 0).unwrap();
 
+    // When: Collecting metrics for large number of VMs
     let result = collector.collect().await;
+
+    // Then: Collection should succeed and include metrics for all VMs
     assert!(result.is_ok());
 
     let metrics = collector.encode().unwrap();
