@@ -2,7 +2,7 @@
 
 ## Summary
 
-Added 4 new metrics that expose detailed information about individual snapshots, enabling timeline visualization and detailed monitoring.
+Added detailed metrics that expose individual snapshot information, enabling timeline visualization and detailed monitoring.
 
 ## New Metrics
 
@@ -24,17 +24,31 @@ pbs_snapshot_info{backup_id="100",backup_type="ct",comment="pihole",datastore="t
 
 **Purpose**: Individual snapshot sizes  
 **Value**: Size in bytes  
+**Labels**: `datastore`, `backup_type`, `backup_id`, `comment`, `timestamp`, `verified`
+
+**Example**:
+
+```prometheus
+pbs_snapshot_size_bytes{backup_id="100",backup_type="ct",comment="pihole",datastore="truenas-backup",timestamp="1762702206",verified="true"} 1730677857
+```
+
+**Use Case**: Track storage growth over time, identify large backups, capacity planning
+
+### 3. `pbs_snapshot_verification_timestamp_seconds`
+
+**Purpose**: Last verification timestamp
+**Value**: Unix timestamp of the latest verification
 **Labels**: `datastore`, `backup_type`, `backup_id`, `comment`, `timestamp`
 
 **Example**:
 
 ```prometheus
-pbs_snapshot_size_bytes{backup_id="100",backup_type="ct",comment="pihole",datastore="truenas-backup",timestamp="1762702206"} 1730677857
+pbs_snapshot_verification_timestamp_seconds{backup_id="100",backup_type="ct",comment="pihole",datastore="truenas-backup",timestamp="1762702206"} 1762705806
 ```
 
-**Use Case**: Track storage growth over time, identify large backups, capacity planning
+**Use Case**: Track when snapshots were last verified
 
-### 3. `pbs_snapshot_verified`
+### 4. `pbs_snapshot_verified`
 
 **Purpose**: Verification status  
 **Value**: `1` = verified OK, `0` = failed/unknown  
@@ -48,7 +62,7 @@ pbs_snapshot_verified{backup_id="100",backup_type="ct",comment="pihole",datastor
 
 **Use Case**: Alert on verification failures, monitor backup integrity
 
-### 4. `pbs_snapshot_protected`
+### 5. `pbs_snapshot_protected`
 
 **Purpose**: Protection status  
 **Value**: `1` = protected, `0` = not protected  

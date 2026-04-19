@@ -3,7 +3,10 @@
 //! This module contains all the functions that update metrics based on PBS API data.
 
 use super::MetricRegistry;
-use crate::client::{BackupGroup, DatastoreUsage, NodeStatus, VersionInfo};
+use crate::client::{
+    BackupGroup, DatastoreUsage, GcStatus, NodeStatus, Snapshot, TapeDrive, Task,
+    VerificationStatus, VersionInfo,
+};
 use std::collections::HashMap;
 use tracing::debug;
 
@@ -12,6 +15,14 @@ const UNKNOWN: &str = "unknown";
 const EMPTY_STR: &str = "";
 const RUNNING: &str = "running";
 const OK: &str = "ok";
+
+type LatestSnapshotCommentMap = HashMap<(String, String), (i64, Option<String>)>;
+
+struct SnapshotVerification {
+    value: f64,
+    label: &'static str,
+    timestamp: Option<i64>,
+}
 
 pub(super) fn update_node_metrics(metrics: &MetricRegistry, status: &NodeStatus) {
     debug!("Updating node metrics");
@@ -66,8 +77,8 @@ pub(super) fn update_datastore_metrics(metrics: &MetricRegistry, datastores: &[D
 pub(super) fn update_snapshot_metrics(
     metrics: &MetricRegistry,
     datastore: &str,
-    snapshots: &[crate::client::Snapshot],
-    comment_map: &HashMap<(String, String), (i64, Option<String>)>,
+    snapshots: &[Snapshot],
+    comment_map: &LatestSnapshotCommentMap,
     snapshot_history_limit: usize,
 ) {
     debug!(
@@ -103,23 +114,9 @@ pub(super) fn update_snapshot_metrics(
         group_counter += 1;
         exposed_count += 1;
 
-        // Optimize: Clone key only once for lookup instead of twice
-        let lookup_key = (snapshot.backup_type.clone(), snapshot.backup_id.clone());
-        let (size, comment) = if let Some((_time, s_comment)) = comment_map.get(&lookup_key) {
-            (
-                snapshot.size.unwrap_or(0) as i64,
-                s_comment.as_deref().unwrap_or(EMPTY_STR),
-            )
-        } else {
-            (snapshot.size.unwrap_or(0) as i64, EMPTY_STR)
-        };
-
-        // Truncate comment - use string slice to avoid allocation
-        let safe_comment = if comment.len() > 50 {
-            &comment[..47]
-        } else {
-            comment
-        };
+        let size = snapshot.size.unwrap_or(0) as i64;
+        let comment = latest_snapshot_comment(snapshot, comment_map);
+        let safe_comment = truncate_snapshot_comment(comment);
 
         let timestamp_seconds = snapshot.backup_time;
         let timestamp_str = timestamp_seconds.to_string();
@@ -139,17 +136,7 @@ pub(super) fn update_snapshot_metrics(
             .with_label_values(&base_labels)
             .set(timestamp_seconds as f64);
 
-        // Verification logic
-        let (verified_val, verified_str, verify_time) = if let Some(ver) = &snapshot.verification {
-            let is_ok = ver.state == OK;
-            (
-                if is_ok { 1.0 } else { 0.0 },
-                if is_ok { "true" } else { "false" },
-                ver.last_verify,
-            )
-        } else {
-            (0.0, "false", None)
-        };
+        let verification = snapshot_verification(snapshot.verification.as_ref());
 
         // Size metric needs extra "verified" label
         let size_labels = [
@@ -158,7 +145,7 @@ pub(super) fn update_snapshot_metrics(
             &snapshot.backup_id,
             safe_comment,
             &timestamp_str,
-            verified_str,
+            verification.label,
         ];
 
         metrics
@@ -167,7 +154,7 @@ pub(super) fn update_snapshot_metrics(
             .set(size as f64);
 
         // Verification timestamp metric
-        if let Some(ts) = verify_time {
+        if let Some(ts) = verification.timestamp {
             metrics
                 .snapshot_verification_timestamp
                 .with_label_values(&base_labels)
@@ -177,7 +164,7 @@ pub(super) fn update_snapshot_metrics(
         metrics
             .snapshot_verified
             .with_label_values(&base_labels)
-            .set(verified_val);
+            .set(verification.value);
 
         // Protection status
         let protected = if snapshot.protected.unwrap_or(false) {
@@ -200,11 +187,57 @@ pub(super) fn update_snapshot_metrics(
     );
 }
 
+fn latest_snapshot_comment<'a>(
+    snapshot: &Snapshot,
+    comment_map: &'a LatestSnapshotCommentMap,
+) -> &'a str {
+    // Optimize: clone the key only once for lookup.
+    let lookup_key = (snapshot.backup_type.clone(), snapshot.backup_id.clone());
+
+    comment_map
+        .get(&lookup_key)
+        .and_then(|(_time, comment)| comment.as_deref())
+        .unwrap_or(EMPTY_STR)
+}
+
+fn truncate_snapshot_comment(comment: &str) -> &str {
+    if comment.len() > 50 {
+        &comment[..47]
+    } else {
+        comment
+    }
+}
+
+fn truncate_backup_comment(comment: &str) -> &str {
+    if comment.len() > 50 {
+        &comment[..50]
+    } else {
+        comment
+    }
+}
+
+fn snapshot_verification(verification: Option<&VerificationStatus>) -> SnapshotVerification {
+    if let Some(ver) = verification {
+        let is_ok = ver.state == OK;
+        SnapshotVerification {
+            value: if is_ok { 1.0 } else { 0.0 },
+            label: if is_ok { "true" } else { "false" },
+            timestamp: ver.last_verify,
+        }
+    } else {
+        SnapshotVerification {
+            value: 0.0,
+            label: "false",
+            timestamp: None,
+        }
+    }
+}
+
 pub(super) fn update_backup_metrics(
     metrics: &MetricRegistry,
     datastore: &str,
     groups: &[BackupGroup],
-    comment_map: &HashMap<(String, String), (i64, Option<String>)>,
+    comment_map: &LatestSnapshotCommentMap,
 ) {
     debug!(
         "Updating backup metrics for {} groups in {}",
@@ -219,13 +252,7 @@ pub(super) fn update_backup_metrics(
             .get(&lookup_key)
             .and_then(|(_time, comment)| comment.as_deref())
             .unwrap_or(EMPTY_STR);
-
-        // Truncate comment to 50 chars for Prometheus label compatibility
-        let truncated_comment = if comment.len() > 50 {
-            &comment[..50]
-        } else {
-            comment
-        };
+        let truncated_comment = truncate_backup_comment(comment);
 
         let labels = &[
             datastore,
@@ -248,7 +275,7 @@ pub(super) fn update_backup_metrics(
 
 pub(super) fn update_task_metrics(
     metrics: &MetricRegistry,
-    tasks: &[crate::client::Task],
+    tasks: &[Task],
     comment_map: &HashMap<String, String>,
 ) {
     debug!("Updating task metrics for {} tasks", tasks.len());
@@ -319,11 +346,7 @@ pub(super) fn update_task_metrics(
     }
 }
 
-pub(super) fn update_gc_metrics(
-    metrics: &MetricRegistry,
-    datastore: &str,
-    gc_status: &crate::client::GcStatus,
-) {
+pub(super) fn update_gc_metrics(metrics: &MetricRegistry, datastore: &str, gc_status: &GcStatus) {
     debug!("Updating GC metrics for {}", datastore);
 
     if let Some(timestamp) = gc_status.last_run_endtime {
@@ -367,7 +390,7 @@ pub(super) fn update_gc_metrics(
     }
 }
 
-pub(super) fn update_tape_metrics(metrics: &MetricRegistry, drives: &[crate::client::TapeDrive]) {
+pub(super) fn update_tape_metrics(metrics: &MetricRegistry, drives: &[TapeDrive]) {
     debug!("Updating tape metrics for {} drives", drives.len());
 
     metrics.tape_drive_available.set(drives.len() as f64);

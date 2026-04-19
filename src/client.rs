@@ -6,9 +6,13 @@
 use crate::config::PbsConfig;
 use crate::error::{PbsError, Result};
 use reqwest::Client;
-use serde::{Deserialize, Serialize};
+use serde::de::DeserializeOwned;
+use serde::Deserialize;
 use std::time::Duration;
 use tracing::{debug, warn};
+
+mod types;
+pub use types::*;
 
 /// PBS API client.
 #[derive(Clone)]
@@ -56,6 +60,45 @@ impl PbsClient {
         })
     }
 
+    async fn get_api_data<T>(
+        &self,
+        path: &str,
+        request_description: &str,
+        parse_error_context: Option<String>,
+    ) -> Result<T>
+    where
+        T: DeserializeOwned,
+    {
+        let url = format!("{}{}", self.config.endpoint, path);
+        debug!("Fetching {} from: {}", request_description, url);
+
+        let response = self
+            .client
+            .get(&url)
+            .header("Authorization", &self.auth_header)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            warn!(
+                "Failed to get {}: {}",
+                request_description,
+                response.status()
+            );
+            return Err(PbsError::Api(response.error_for_status().unwrap_err()));
+        }
+
+        let api_response: ApiResponse<T> = match parse_error_context {
+            Some(context) => response
+                .json()
+                .await
+                .map_err(|e| PbsError::ParseError(format!("{}: {}", context, e)))?,
+            None => response.json().await?,
+        };
+
+        Ok(api_response.data)
+    }
+
     /// Get node status (CPU, memory, disk, etc.).
     ///
     /// Fetches the current status of the PBS node including CPU usage, memory,
@@ -94,27 +137,12 @@ impl PbsClient {
     /// # }
     /// ```
     pub async fn get_node_status(&self) -> Result<NodeStatus> {
-        let url = format!("{}/api2/json/nodes/localhost/status", self.config.endpoint);
-        debug!("Fetching node status from: {}", url);
-
-        let response = self
-            .client
-            .get(&url)
-            .header("Authorization", &self.auth_header)
-            .send()
-            .await?;
-
-        if !response.status().is_success() {
-            warn!("Failed to get node status: {}", response.status());
-            return Err(PbsError::Api(response.error_for_status().unwrap_err()));
-        }
-
-        // Parse JSON directly from response stream to avoid buffering
-        let api_response: ApiResponse<NodeStatus> = response
-            .json()
-            .await
-            .map_err(|e| PbsError::ParseError(format!("Failed to parse node status: {}", e)))?;
-        Ok(api_response.data)
+        self.get_api_data(
+            "/api2/json/nodes/localhost/status",
+            "node status",
+            Some("Failed to parse node status".to_string()),
+        )
+        .await
     }
 
     /// Get datastore usage information.
@@ -154,23 +182,8 @@ impl PbsClient {
     /// # }
     /// ```
     pub async fn get_datastore_usage(&self) -> Result<Vec<DatastoreUsage>> {
-        let url = format!("{}/api2/json/status/datastore-usage", self.config.endpoint);
-        debug!("Fetching datastore usage from: {}", url);
-
-        let response = self
-            .client
-            .get(&url)
-            .header("Authorization", &self.auth_header)
-            .send()
-            .await?;
-
-        if !response.status().is_success() {
-            warn!("Failed to get datastore usage: {}", response.status());
-            return Err(PbsError::Api(response.error_for_status().unwrap_err()));
-        }
-
-        let api_response: ApiResponse<Vec<DatastoreUsage>> = response.json().await?;
-        Ok(api_response.data)
+        self.get_api_data("/api2/json/status/datastore-usage", "datastore usage", None)
+            .await
     }
 
     /// Get backup groups for a specific datastore.
@@ -217,36 +230,12 @@ impl PbsClient {
     /// # }
     /// ```
     pub async fn get_backup_groups(&self, datastore: &str) -> Result<Vec<BackupGroup>> {
-        let url = format!(
-            "{}/api2/json/admin/datastore/{}/groups",
-            self.config.endpoint, datastore
-        );
-        debug!("Fetching backup groups from: {}", url);
-
-        let response = self
-            .client
-            .get(&url)
-            .header("Authorization", &self.auth_header)
-            .send()
-            .await?;
-
-        if !response.status().is_success() {
-            warn!(
-                "Failed to get backup groups for {}: {}",
-                datastore,
-                response.status()
-            );
-            return Err(PbsError::Api(response.error_for_status().unwrap_err()));
-        }
-
-        // Parse JSON directly from response stream
-        let api_response: ApiResponse<Vec<BackupGroup>> = response.json().await.map_err(|e| {
-            PbsError::ParseError(format!(
-                "Failed to parse backup groups for {}: {}",
-                datastore, e
-            ))
-        })?;
-        Ok(api_response.data)
+        self.get_api_data(
+            &format!("/api2/json/admin/datastore/{}/groups", datastore),
+            &format!("backup groups for {}", datastore),
+            Some(format!("Failed to parse backup groups for {}", datastore)),
+        )
+        .await
     }
 
     /// Get PBS version information.
@@ -287,23 +276,8 @@ impl PbsClient {
     /// # }
     /// ```
     pub async fn get_version(&self) -> Result<VersionInfo> {
-        let url = format!("{}/api2/json/version", self.config.endpoint);
-        debug!("Fetching version from: {}", url);
-
-        let response = self
-            .client
-            .get(&url)
-            .header("Authorization", &self.auth_header)
-            .send()
-            .await?;
-
-        if !response.status().is_success() {
-            warn!("Failed to get version: {}", response.status());
-            return Err(PbsError::Api(response.error_for_status().unwrap_err()));
-        }
-
-        let api_response: ApiResponse<VersionInfo> = response.json().await?;
-        Ok(api_response.data)
+        self.get_api_data("/api2/json/version", "version", None)
+            .await
     }
 }
 
@@ -311,116 +285,6 @@ impl PbsClient {
 #[derive(Debug, Deserialize)]
 struct ApiResponse<T> {
     data: T,
-}
-
-/// Node status information from PBS.
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct NodeStatus {
-    /// CPU usage (0.0 to 1.0)
-    pub cpu: f64,
-    /// I/O wait (0.0 to 1.0)
-    pub wait: f64,
-    /// Used memory in bytes
-    pub memory: Memory,
-    /// Root filesystem usage (PBS calls it "root" not "rootfs")
-    pub root: Disk,
-    /// Swap usage
-    pub swap: Memory,
-    /// Load averages [1min, 5min, 15min]
-    pub loadavg: [f64; 3],
-    /// Uptime in seconds
-    pub uptime: u64,
-}
-
-/// Memory information.
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct Memory {
-    /// Used memory in bytes
-    pub used: u64,
-    /// Total memory in bytes
-    pub total: u64,
-    /// Free memory in bytes
-    pub free: u64,
-}
-
-/// Disk information.
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct Disk {
-    /// Used disk space in bytes
-    pub used: u64,
-    /// Total disk space in bytes
-    pub total: u64,
-    /// Available disk space in bytes
-    pub avail: u64,
-}
-
-/// Datastore usage information.
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct DatastoreUsage {
-    /// Datastore name
-    pub store: String,
-    /// Total size in bytes
-    pub total: u64,
-    /// Used bytes
-    pub used: u64,
-    /// Available bytes
-    pub avail: u64,
-}
-
-/// Backup group information.
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct BackupGroup {
-    /// Backup type (vm, ct, host)
-    #[serde(rename = "backup-type")]
-    pub backup_type: String,
-    /// Backup ID (VM ID, CT ID, or hostname)
-    #[serde(rename = "backup-id")]
-    pub backup_id: String,
-    /// Number of snapshots in this group
-    #[serde(rename = "backup-count")]
-    pub backup_count: u64,
-    /// Last backup timestamp (Unix epoch)
-    #[serde(rename = "last-backup")]
-    pub last_backup: i64,
-    /// Optional comment
-    #[serde(default)]
-    pub comment: Option<String>,
-}
-
-/// Snapshot information from PBS.
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct Snapshot {
-    /// Backup type (vm, ct, host)
-    #[serde(rename = "backup-type")]
-    pub backup_type: String,
-    /// Backup ID (VM ID, CT ID, or hostname)
-    #[serde(rename = "backup-id")]
-    pub backup_id: String,
-    /// Backup timestamp (Unix epoch)
-    #[serde(rename = "backup-time")]
-    pub backup_time: i64,
-    /// Optional comment
-    #[serde(default)]
-    pub comment: Option<String>,
-    /// Total snapshot size in bytes
-    #[serde(default)]
-    pub size: Option<u64>,
-    /// Whether snapshot is protected from deletion
-    #[serde(default)]
-    pub protected: Option<bool>,
-    /// Verification status
-    #[serde(default)]
-    pub verification: Option<VerificationStatus>,
-}
-
-/// Verification status information.
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct VerificationStatus {
-    /// Verification state (ok, failed, none, etc.)
-    pub state: String,
-    /// Last verification timestamp (Unix epoch)
-    #[serde(rename = "last-verify")]
-    pub last_verify: Option<i64>,
 }
 
 impl PbsClient {
@@ -473,114 +337,17 @@ impl PbsClient {
     /// # }
     /// ```
     pub async fn get_snapshots(&self, datastore: &str) -> Result<Vec<Snapshot>> {
-        let url = format!(
-            "{}/api2/json/admin/datastore/{}/snapshots",
-            self.config.endpoint, datastore
-        );
-        debug!("Fetching snapshots from: {}", url);
-
-        let response = self
-            .client
-            .get(&url)
-            .header("Authorization", &self.auth_header)
-            .send()
+        let snapshots: Vec<Snapshot> = self
+            .get_api_data(
+                &format!("/api2/json/admin/datastore/{}/snapshots", datastore),
+                &format!("snapshots for {}", datastore),
+                Some(format!("Failed to parse snapshots for {}", datastore)),
+            )
             .await?;
 
-        if !response.status().is_success() {
-            warn!(
-                "Failed to get snapshots for {}: {}",
-                datastore,
-                response.status()
-            );
-            return Err(PbsError::Api(response.error_for_status().unwrap_err()));
-        }
-
-        // Parse JSON directly from response stream
-        let api_response: ApiResponse<Vec<Snapshot>> = response.json().await.map_err(|e| {
-            PbsError::ParseError(format!(
-                "Failed to parse snapshots for {}: {}",
-                datastore, e
-            ))
-        })?;
-
-        debug!(
-            "Fetched {} snapshots for {}",
-            api_response.data.len(),
-            datastore
-        );
-        Ok(api_response.data)
+        debug!("Fetched {} snapshots for {}", snapshots.len(), datastore);
+        Ok(snapshots)
     }
-}
-
-/// PBS version information.
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct VersionInfo {
-    /// PBS version string
-    pub version: String,
-    /// Release information
-    pub release: String,
-    /// Repository ID
-    pub repoid: String,
-}
-
-/// Task information from PBS.
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct Task {
-    /// Unique process ID
-    pub upid: String,
-    /// Worker type (backup, verify, prune, sync, garbage_collection)
-    #[serde(rename = "worker_type")]
-    pub worker_type: String,
-    /// Worker ID (datastore:type/id)
-    #[serde(rename = "worker_id")]
-    pub worker_id: Option<String>,
-    /// Start timestamp
-    pub starttime: i64,
-    /// Task end time (if finished)
-    pub endtime: Option<i64>,
-    /// Task status
-    pub status: Option<String>,
-    /// Comment (if any)
-    #[serde(default)]
-    pub comment: Option<String>,
-}
-
-/// Garbage collection status for a datastore.
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct GcStatus {
-    /// Total bytes on disk
-    #[serde(rename = "disk-bytes")]
-    pub disk_bytes: Option<u64>,
-    /// Bytes reclaimed in last GC
-    #[serde(rename = "removed-bytes")]
-    pub removed_bytes: Option<u64>,
-    /// Bytes that can be reclaimed
-    #[serde(rename = "pending-bytes")]
-    pub pending_bytes: Option<u64>,
-    /// Last GC completion timestamp
-    #[serde(rename = "last-run-endtime")]
-    pub last_run_endtime: Option<i64>,
-    /// Last GC status
-    #[serde(rename = "last-run-state")]
-    pub last_run_state: Option<String>,
-    /// Last GC duration in seconds
-    pub duration: Option<f64>,
-}
-
-/// Tape drive information.
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct TapeDrive {
-    /// Drive name
-    pub name: String,
-    /// Vendor
-    #[serde(default)]
-    pub vendor: Option<String>,
-    /// Model
-    #[serde(default)]
-    pub model: Option<String>,
-    /// Serial number
-    #[serde(default)]
-    pub serial: Option<String>,
 }
 
 impl PbsClient {
@@ -633,26 +400,12 @@ impl PbsClient {
     /// ```
     pub async fn get_tasks(&self, limit: Option<u64>) -> Result<Vec<Task>> {
         let limit_param = limit.unwrap_or(50);
-        let url = format!(
-            "{}/api2/json/nodes/localhost/tasks?limit={}",
-            self.config.endpoint, limit_param
-        );
-        debug!("Fetching tasks from: {}", url);
-
-        let response = self
-            .client
-            .get(&url)
-            .header("Authorization", &self.auth_header)
-            .send()
-            .await?;
-
-        if !response.status().is_success() {
-            warn!("Failed to get tasks: {}", response.status());
-            return Err(PbsError::Api(response.error_for_status().unwrap_err()));
-        }
-
-        let api_response: ApiResponse<Vec<Task>> = response.json().await?;
-        Ok(api_response.data)
+        self.get_api_data(
+            &format!("/api2/json/nodes/localhost/tasks?limit={}", limit_param),
+            "tasks",
+            None,
+        )
+        .await
     }
 
     /// Get garbage collection status for a datastore.
@@ -703,30 +456,12 @@ impl PbsClient {
     /// # }
     /// ```
     pub async fn get_gc_status(&self, datastore: &str) -> Result<GcStatus> {
-        let url = format!(
-            "{}/api2/json/admin/datastore/{}/gc",
-            self.config.endpoint, datastore
-        );
-        debug!("Fetching GC status from: {}", url);
-
-        let response = self
-            .client
-            .get(&url)
-            .header("Authorization", &self.auth_header)
-            .send()
-            .await?;
-
-        if !response.status().is_success() {
-            warn!(
-                "Failed to get GC status for {}: {}",
-                datastore,
-                response.status()
-            );
-            return Err(PbsError::Api(response.error_for_status().unwrap_err()));
-        }
-
-        let api_response: ApiResponse<GcStatus> = response.json().await?;
-        Ok(api_response.data)
+        self.get_api_data(
+            &format!("/api2/json/admin/datastore/{}/gc", datastore),
+            &format!("GC status for {}", datastore),
+            None,
+        )
+        .await
     }
 
     /// Get configured tape drives.
@@ -773,22 +508,7 @@ impl PbsClient {
     /// # }
     /// ```
     pub async fn get_tape_drives(&self) -> Result<Vec<TapeDrive>> {
-        let url = format!("{}/api2/json/tape/drive", self.config.endpoint);
-        debug!("Fetching tape drives from: {}", url);
-
-        let response = self
-            .client
-            .get(&url)
-            .header("Authorization", &self.auth_header)
-            .send()
-            .await?;
-
-        if !response.status().is_success() {
-            warn!("Failed to get tape drives: {}", response.status());
-            return Err(PbsError::Api(response.error_for_status().unwrap_err()));
-        }
-
-        let api_response: ApiResponse<Vec<TapeDrive>> = response.json().await?;
-        Ok(api_response.data)
+        self.get_api_data("/api2/json/tape/drive", "tape drives", None)
+            .await
     }
 }
