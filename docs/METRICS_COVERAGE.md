@@ -34,10 +34,11 @@
 
 | Metric | Description | Labels |
 | -------- | ------------- | -------- |
-| `pbs_snapshot_count` | Number of snapshots | `datastore`, `backup_type`, `backup_id` |
-| `pbs_snapshot_last_timestamp_seconds` | Last backup time (Unix) | `datastore`, `backup_type`, `backup_id` |
+| `pbs_snapshot_count` | Number of snapshots | `datastore`, `backup_type`, `backup_id`, `comment` |
+| `pbs_snapshot_last_timestamp_seconds` | Last backup time (Unix) | `datastore`, `backup_type`, `backup_id`, `comment` |
 | `pbs_snapshot_info` | Snapshot timeline info (value=timestamp) | `datastore`, `backup_type`, `backup_id`, `comment`, `timestamp` |
-| `pbs_snapshot_size_bytes` | Snapshot size | `datastore`, `backup_type`, `backup_id`, `comment`, `timestamp` |
+| `pbs_snapshot_size_bytes` | Snapshot size | `datastore`, `backup_type`, `backup_id`, `comment`, `timestamp`, `verified` |
+| `pbs_snapshot_verification_timestamp_seconds` | Last verification time (Unix) | `datastore`, `backup_type`, `backup_id`, `comment`, `timestamp` |
 | `pbs_snapshot_verified` | Verification status (1=ok, 0=other) | `datastore`, `backup_type`, `backup_id`, `comment`, `timestamp` |
 | `pbs_snapshot_protected` | Protected status (1=yes, 0=no) | `datastore`, `backup_type`, `backup_id`, `comment`, `timestamp` |
 
@@ -45,23 +46,19 @@
 
 | Metric | Description | Labels |
 | -------- | ------------- | -------- |
-| `pbs_task_total` | Total tasks count | `worker_type`, `status` |
+| `pbs_task_total` | Total tasks count | `worker_type`, `status`, `comment` |
+| `pbs_task_duration_seconds` | Task duration in seconds | `worker_type`, `status`, `worker_id`, `comment` |
+| `pbs_task_last_run_timestamp` | Unix timestamp of last run | `worker_type` |
+| `pbs_task_running` | Currently running tasks | `worker_type`, `comment` |
 
-- **`pbs_task_duration_seconds`**
-  - Labels: `worker_type`, `status`, `worker_id`, `comment`
-  - Value: Duration in seconds
-  - *Note*: `comment` is populated from the task itself, or correlated from the latest snapshot for backup tasks if the task comment is empty.
-- **`pbs_task_last_run_timestamp_seconds`**
-  - Labels: `worker_type`
-  - Value: Unix timestamp of last run
-| `pbs_task_running` | Currently running tasks | `worker_type` |
+`comment` is populated from the task itself, or correlated from the latest snapshot for backup tasks if the task comment is empty.
 
 ### GC Metrics
 
 | Metric | Description | Labels |
 | -------- | ------------- | -------- |
 | `pbs_gc_last_run_timestamp` | Last GC run time | `datastore` |
-| `pbs_gc_duration_seconds` | Last GC duration | `datastore`, `status` |
+| `pbs_gc_duration_seconds` | Last GC duration | `datastore` |
 | `pbs_gc_removed_bytes` | Bytes removed in GC | `datastore` |
 | `pbs_gc_pending_bytes` | Bytes pending removal | `datastore` |
 | `pbs_gc_status` | Last GC status (1=ok) | `datastore` |
