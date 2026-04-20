@@ -35,14 +35,19 @@ A Prometheus metrics exporter for Proxmox Backup Server 4.x, written in Rust.
 
 ### Snapshot Metrics
 
-- `pbs_snapshot_info{datastore,backup_type,backup_id,backup_time,comment,owner,verification_state}` - Snapshot metadata
-- `pbs_snapshot_size_bytes{datastore,backup_type,backup_id}` - Snapshot size
-- `pbs_snapshot_count{datastore,backup_type,backup_id}` - Number of snapshots per group
+- `pbs_snapshot_count{datastore,backup_type,backup_id,comment}` - Number of snapshots per group
+- `pbs_snapshot_last_timestamp_seconds{datastore,backup_type,backup_id,comment}` - Unix timestamp of last backup per group
+- `pbs_snapshot_info{datastore,backup_type,backup_id,comment,timestamp}` - Snapshot metadata with timestamp as value
+- `pbs_snapshot_size_bytes{datastore,backup_type,backup_id,comment,timestamp,verified}` - Snapshot size
+- `pbs_snapshot_verification_timestamp_seconds{datastore,backup_type,backup_id,comment,timestamp}` - Unix timestamp of last verification
+- `pbs_snapshot_verified{datastore,backup_type,backup_id,comment,timestamp}` - Snapshot verification status (1=ok, 0=failed/unknown)
+- `pbs_snapshot_protected{datastore,backup_type,backup_id,comment,timestamp}` - Snapshot protection status
 
 ### Task Metrics
 
 - `pbs_task_total{worker_type,status,comment}` - Total tasks by type and status
 - `pbs_task_duration_seconds{worker_type,status,worker_id,comment}` - Task duration
+- `pbs_task_last_run_timestamp{worker_type}` - Last run timestamp for task type
 - `pbs_task_running{worker_type,comment}` - Currently running tasks
 
 ### Garbage Collection Metrics

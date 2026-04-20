@@ -361,7 +361,7 @@ impl MetricRegistry {
         let encoder = TextEncoder::new();
         let metric_families = self.registry.gather();
 
-        // Reuse buffer to avoid allocation on every scrape
+        // Keep a thread-local scratch buffer while encoding the current scrape.
         thread_local! {
             static BUFFER: std::cell::RefCell<Vec<u8>> = std::cell::RefCell::new(Vec::with_capacity(8192));
         }

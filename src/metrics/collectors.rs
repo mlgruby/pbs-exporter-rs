@@ -1,10 +1,15 @@
 //! Metric collection orchestration logic.
 
-use super::MetricsCollector;
+use super::{MetricRegistry, MetricsCollector};
+use crate::client::Snapshot;
 use crate::error::Result;
+use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::time::Instant;
 use tracing::{error, info};
+
+type LatestSnapshotCommentMap = HashMap<(String, String), (i64, Option<String>)>;
+type TaskCommentMap = HashMap<String, String>;
 
 /// Collect all metrics from PBS.
 pub(super) async fn collect(collector: &MetricsCollector) -> Result<()> {
@@ -67,54 +72,7 @@ pub(super) async fn collect_internal(collector: &MetricsCollector) -> Result<()>
     let metrics = collector.metrics();
     let client = collector.client();
 
-    // Reset all metrics to prevent stale data
-    // This is crucial because we populate metrics dynamically based on current API state.
-    // If an object (snapshot, task, drive) disappears or is filtered out,
-    // we must ensure its corresponding metric is removed.
-    metrics.pbs_up.set(0.0); // Will be set to 1.0 on success
-    metrics.host_cpu_usage.set(0.0);
-    metrics.host_io_wait.set(0.0);
-    metrics.host_load1.set(0.0);
-    metrics.host_load5.set(0.0);
-    metrics.host_load15.set(0.0);
-    metrics.host_memory_used_bytes.set(0.0);
-    metrics.host_memory_total_bytes.set(0.0);
-    metrics.host_memory_free_bytes.set(0.0);
-    metrics.host_swap_used_bytes.set(0.0);
-    metrics.host_swap_total_bytes.set(0.0);
-    metrics.host_swap_free_bytes.set(0.0);
-    metrics.host_rootfs_used_bytes.set(0.0);
-    metrics.host_rootfs_total_bytes.set(0.0);
-    metrics.host_rootfs_avail_bytes.set(0.0);
-    metrics.host_uptime_seconds.set(0.0);
-
-    metrics.datastore_total_bytes.reset();
-    metrics.datastore_used_bytes.reset();
-    metrics.datastore_available_bytes.reset();
-
-    metrics.snapshot_count.reset();
-    metrics.snapshot_info.reset();
-    metrics.snapshot_size_bytes.reset();
-    metrics.snapshot_verified.reset();
-    metrics.snapshot_verification_timestamp.reset();
-    metrics.snapshot_protected.reset();
-    metrics.snapshot_last_timestamp_seconds.reset();
-
-    metrics.task_total.reset();
-    metrics.task_duration_seconds.reset();
-    metrics.task_last_run_timestamp.reset();
-    metrics.task_running.reset();
-
-    metrics.gc_last_run_timestamp.reset();
-    metrics.gc_duration_seconds.reset();
-    metrics.gc_removed_bytes.reset();
-    metrics.gc_pending_bytes.reset();
-    metrics.gc_status.reset();
-
-    metrics.tape_drive_info.reset();
-    metrics.tape_drive_available.set(0.0);
-
-    metrics.pbs_version.reset();
+    reset_metrics(metrics);
 
     // Collect node status
     let node_status = client.get_node_status().await?;
@@ -126,8 +84,7 @@ pub(super) async fn collect_internal(collector: &MetricsCollector) -> Result<()>
 
     // Map to store comments for tasks (worker_id -> comment)
     // Pre-allocate with estimated capacity
-    let mut task_comment_map: HashMap<String, String> =
-        HashMap::with_capacity(datastores.len() * 10);
+    let mut task_comment_map = TaskCommentMap::with_capacity(datastores.len() * 10);
 
     // Collect backup groups and snapshots for each datastore
     for ds in &datastores {
@@ -140,39 +97,8 @@ pub(super) async fn collect_internal(collector: &MetricsCollector) -> Result<()>
             }
         };
 
-        // Build a map of (backup_type, backup_id) -> (latest_time, comment)
-        // Pre-allocate with estimated capacity
-        let mut comment_map: HashMap<(String, String), (i64, Option<String>)> =
-            HashMap::with_capacity(snapshots.len() / 5);
-
-        for snapshot in &snapshots {
-            // Use entry API to avoid cloning keys for lookup
-            use std::collections::hash_map::Entry;
-
-            match comment_map.entry((snapshot.backup_type.clone(), snapshot.backup_id.clone())) {
-                Entry::Occupied(mut e) => {
-                    // Only update if this snapshot is newer
-                    if snapshot.backup_time > e.get().0 {
-                        e.get_mut().0 = snapshot.backup_time;
-                        e.get_mut().1 = snapshot.comment.clone();
-                    }
-                }
-                Entry::Vacant(e) => {
-                    e.insert((snapshot.backup_time, snapshot.comment.clone()));
-                }
-            }
-        }
-
-        // Populate task_comment_map from the comment_map
-        for ((backup_type, backup_id), (_, comment)) in &comment_map {
-            if let Some(c) = comment {
-                if !c.is_empty() {
-                    // Construct worker_id: datastore:type/id
-                    let worker_id = format!("{}:{}/{}", ds.store, backup_type, backup_id);
-                    task_comment_map.insert(worker_id, c.clone());
-                }
-            }
-        }
+        let comment_map = build_latest_snapshot_comment_map(&snapshots);
+        add_task_comments_from_snapshots(&ds.store, &comment_map, &mut task_comment_map);
 
         // Update individual snapshot metrics
         super::updates::update_snapshot_metrics(
@@ -226,4 +152,91 @@ pub(super) async fn collect_internal(collector: &MetricsCollector) -> Result<()>
     super::updates::update_version_metrics(metrics, &version);
 
     Ok(())
+}
+
+fn reset_metrics(metrics: &MetricRegistry) {
+    // Dynamic labels can disappear between scrapes, so reset everything that is
+    // populated from current API state before collecting fresh values.
+    metrics.pbs_up.set(0.0); // Will be set to 1.0 on success
+    metrics.host_cpu_usage.set(0.0);
+    metrics.host_io_wait.set(0.0);
+    metrics.host_load1.set(0.0);
+    metrics.host_load5.set(0.0);
+    metrics.host_load15.set(0.0);
+    metrics.host_memory_used_bytes.set(0.0);
+    metrics.host_memory_total_bytes.set(0.0);
+    metrics.host_memory_free_bytes.set(0.0);
+    metrics.host_swap_used_bytes.set(0.0);
+    metrics.host_swap_total_bytes.set(0.0);
+    metrics.host_swap_free_bytes.set(0.0);
+    metrics.host_rootfs_used_bytes.set(0.0);
+    metrics.host_rootfs_total_bytes.set(0.0);
+    metrics.host_rootfs_avail_bytes.set(0.0);
+    metrics.host_uptime_seconds.set(0.0);
+
+    metrics.datastore_total_bytes.reset();
+    metrics.datastore_used_bytes.reset();
+    metrics.datastore_available_bytes.reset();
+
+    metrics.snapshot_count.reset();
+    metrics.snapshot_info.reset();
+    metrics.snapshot_size_bytes.reset();
+    metrics.snapshot_verified.reset();
+    metrics.snapshot_verification_timestamp.reset();
+    metrics.snapshot_protected.reset();
+    metrics.snapshot_last_timestamp_seconds.reset();
+
+    metrics.task_total.reset();
+    metrics.task_duration_seconds.reset();
+    metrics.task_last_run_timestamp.reset();
+    metrics.task_running.reset();
+
+    metrics.gc_last_run_timestamp.reset();
+    metrics.gc_duration_seconds.reset();
+    metrics.gc_removed_bytes.reset();
+    metrics.gc_pending_bytes.reset();
+    metrics.gc_status.reset();
+
+    metrics.tape_drive_info.reset();
+    metrics.tape_drive_available.set(0.0);
+
+    metrics.pbs_version.reset();
+}
+
+fn build_latest_snapshot_comment_map(snapshots: &[Snapshot]) -> LatestSnapshotCommentMap {
+    let mut comment_map = LatestSnapshotCommentMap::with_capacity(snapshots.len() / 5);
+
+    for snapshot in snapshots {
+        let key = (snapshot.backup_type.clone(), snapshot.backup_id.clone());
+
+        match comment_map.entry(key) {
+            Entry::Occupied(mut entry) => {
+                if snapshot.backup_time > entry.get().0 {
+                    let latest = entry.get_mut();
+                    latest.0 = snapshot.backup_time;
+                    latest.1 = snapshot.comment.clone();
+                }
+            }
+            Entry::Vacant(entry) => {
+                entry.insert((snapshot.backup_time, snapshot.comment.clone()));
+            }
+        }
+    }
+
+    comment_map
+}
+
+fn add_task_comments_from_snapshots(
+    datastore: &str,
+    comment_map: &LatestSnapshotCommentMap,
+    task_comment_map: &mut TaskCommentMap,
+) {
+    for ((backup_type, backup_id), (_, comment)) in comment_map {
+        if let Some(c) = comment {
+            if !c.is_empty() {
+                let worker_id = format!("{}:{}/{}", datastore, backup_type, backup_id);
+                task_comment_map.insert(worker_id, c.clone());
+            }
+        }
+    }
 }
